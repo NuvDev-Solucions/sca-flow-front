@@ -1,0 +1,291 @@
+/* ==========================================================================
+   SCAFLOW — OFFICIAL DESIGN SYSTEM & BRAND TOKENS
+   Palette: Electric Blue (#2E9EFD), Intense Blue (#286DFC), 
+            Vibrant Purple (#7F48FC), Violet (#5D5EFC), 
+            Deep Navy (#07133F), Background Navy (#020817)
+   ========================================================================== */
+
+:root {
+  /* Cores Principais do Símbolo */
+  --brand-primary: #2E9EFD;
+  --brand-primary-rgb: 46, 158, 253;
+  --brand-intense: #286DFC;
+  --brand-secondary: #7F48FC;
+  --brand-secondary-rgb: 127, 72, 252;
+  --brand-violet: #5D5EFC;
+  
+  /* Cores de Fundo e Superfície */
+  --bg-dark: #020817;
+  --bg-surface: #07133F;
+  --bg-surface-rgb: 7, 19, 63;
+  --bg-surface-elevated: #0b1c59;
+  --bg-navy-glow: #1324A0;
+
+  /* Textos */
+  --text-primary: #FDFCFD;
+  --text-muted: #B5BCD7;
+  --text-dim: #7e8bb6;
+
+  /* Bordas e Gradientes */
+  --border-subtle: rgba(93, 94, 252, 0.22);
+  --border-active: rgba(46, 158, 253, 0.6);
+  --border-glow: 0 0 20px rgba(46, 158, 253, 0.35);
+
+  --gradient-symbol: linear-gradient(
+    135deg,
+    #286DFC 0%,
+    #2E9EFD 45%,
+    #5D5EFC 70%,
+    #7F48FC 100%
+  );
+
+  --gradient-symbol-hover: linear-gradient(
+    135deg,
+    #2E9EFD 0%,
+    #5D5EFC 50%,
+    #7F48FC 100%
+  );
+
+  --gradient-card: linear-gradient(
+    135deg,
+    rgba(7, 19, 63, 0.75) 0%,
+    rgba(2, 8, 23, 0.92) 100%
+  );
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-xl: 30px;
+  --radius-full: 9999px;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: radial-gradient(
+    circle at 50% 45%,
+    #1324A0 0%,
+    #07133F 45%,
+    #020817 100%
+  );
+  background-attachment: fixed;
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Camada Atmosférica ScaFlow */
+.app-atmosphere {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.aurora-gradient-1 {
+  position: absolute;
+  top: -15%;
+  left: 25%;
+  width: 55vw;
+  height: 55vw;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(46, 158, 253, 0.16) 0%, rgba(93, 94, 252, 0.10) 50%, transparent 75%);
+  filter: blur(85px);
+  animation: floatOrb 20s infinite alternate ease-in-out;
+}
+
+.aurora-gradient-2 {
+  position: absolute;
+  bottom: -15%;
+  right: 15%;
+  width: 50vw;
+  height: 50vw;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(127, 72, 252, 0.18) 0%, rgba(19, 36, 160, 0.12) 50%, transparent 75%);
+  filter: blur(95px);
+  animation: floatOrb 26s infinite alternate-reverse ease-in-out;
+}
+
+.noise-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+@keyframes floatOrb {
+  0% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-30px, 25px) scale(1.06); }
+  100% { transform: translate(25px, -30px) scale(0.96); }
+}
+
+/* Painéis de Vidro ScaFlow */
+.glass-panel {
+  background: var(--gradient-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 36px -10px rgba(2, 8, 23, 0.8), 0 0 25px -8px rgba(46, 158, 253, 0.15);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel-glow:hover {
+  border-color: var(--border-active);
+  box-shadow: 0 20px 40px -8px rgba(2, 8, 23, 0.9), var(--border-glow);
+}
+
+/* Botões do Sistema */
+.btn-primary {
+  background: var(--gradient-symbol);
+  color: #FDFCFD;
+  border: none;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  padding: 12px 22px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 18px rgba(46, 158, 253, 0.35);
+}
+.btn-primary:hover {
+  background: var(--gradient-symbol-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 26px rgba(46, 158, 253, 0.5);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: rgba(7, 19, 63, 0.6);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: 12px 20px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+.btn-secondary:hover {
+  background: rgba(19, 36, 160, 0.4);
+  border-color: var(--brand-primary);
+  color: #FDFCFD;
+}
+
+/* Badges e Pílulas */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.badge-normal {
+  background: rgba(46, 158, 253, 0.15);
+  color: #2E9EFD;
+  border: 1px solid rgba(46, 158, 253, 0.35);
+}
+
+.badge-prioritario {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.badge-especial {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.badge-live {
+  background: rgba(46, 158, 253, 0.18);
+  color: #2E9EFD;
+  border: 1px solid rgba(46, 158, 253, 0.4);
+}
+
+/* Indicadores Luminosos */
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2E9EFD;
+  box-shadow: 0 0 0 0 rgba(46, 158, 253, 0.7);
+  animation: pulseBlue 2s infinite;
+}
+
+@keyframes pulseBlue {
+  0% { box-shadow: 0 0 0 0 rgba(46, 158, 253, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(46, 158, 253, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(46, 158, 253, 0); }
+}
+
+.pulse-dot-red {
+  background: #ef4444;
+  animation: pulseRed 2s infinite;
+}
+
+@keyframes pulseRed {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+/* Animações Suaves */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.94); }
+  70% { transform: scale(1.01); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.pop-in {
+  animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Scrollbars Estilizadas */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(2, 8, 23, 0.4);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(93, 94, 252, 0.35);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-primary);
+}
