@@ -1,65 +1,42 @@
 // client/src/pages/Login.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import { 
+  Lock, 
+  Mail, 
+  ArrowRight, 
+  Sparkles, 
   ShieldCheck, 
-  Headphones, 
+  Building2, 
   Ticket, 
   Tv, 
-  ArrowRight, 
-  BarChart3,
-  Activity,
-  Layers,
-  Sparkles
+  Headphones, 
+  Crown,
+  AlertCircle
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
 
-export default function Login({ onSelectUser }) {
-  const profiles = [
-    {
-      id: 'admin',
-      title: 'Gestão Estratégica',
-      badge: 'Visão Operacional',
-      badgeColor: '#2E9EFD',
-      description: 'Acompanhamento em tempo real de indicadores, fluxo de atendimento, tempo de espera e produtividade.',
-      icon: <BarChart3 size={32} color="#2E9EFD" />,
-      borderColor: 'rgba(46, 158, 253, 0.45)',
-      btnLabel: 'Acessar Gestão',
-      features: ['Indicadores ao Vivo', 'Tempos Médios (TME/TMA)', 'Monitoramento de Posições']
-    },
-    {
-      id: 'laura',
-      title: 'Estação de Atendimento',
-      badge: 'Guichê Laura',
-      badgeColor: '#5D5EFC',
-      description: 'Chamada sequencial ou direta de senhas, modo automático inteligente, cronômetro e pausas programadas.',
-      icon: <Headphones size={32} color="#5D5EFC" />,
-      borderColor: 'rgba(93, 94, 252, 0.45)',
-      btnLabel: 'Iniciar Atendimento',
-      features: ['Chamada Automática', 'Pausas com Registro', 'Transferência Rápida']
-    },
-    {
-      id: 'senha',
-      title: 'Terminal de Autoatendimento',
-      badge: 'Totem de Emissão',
-      badgeColor: '#7F48FC',
-      description: 'Interface tátil para clientes emitirem senhas por especialidade com classificação de prioridade.',
-      icon: <Ticket size={32} color="#7F48FC" />,
-      borderColor: 'rgba(127, 72, 252, 0.45)',
-      btnLabel: 'Abrir Totem Touch',
-      features: ['Seleção Direta', 'Classificação Legal', 'Comprovante Instantâneo']
-    },
-    {
-      id: 'painel',
-      title: 'Painel de Sinalização',
-      badge: 'Monitor de TV',
-      badgeColor: '#286DFC',
-      description: 'Exibição em tela cheia para área de espera com sonorização de alerta e anúncio por voz sintetizada.',
-      icon: <Tv size={32} color="#286DFC" />,
-      borderColor: 'rgba(40, 109, 252, 0.45)',
-      btnLabel: 'Abrir Tela de Chamadas',
-      features: ['Áudio Harmonioso', 'Locução em Português', 'Histórico Recente']
+export default function Login({ onQuickAccess }) {
+  const { signIn, loading } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+    try {
+      await signIn(email, password);
+    } catch (err) {
+      setErrorMsg(err.message || 'Falha na autenticação. Verifique seu e-mail e senha.');
     }
-  ];
+  };
+
+  const handleFillDemo = (demoEmail, demoPassword) => {
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    setErrorMsg('');
+  };
 
   return (
     <div style={{
@@ -68,137 +45,282 @@ export default function Login({ onSelectUser }) {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '40px 20px',
+      padding: '30px 20px',
       position: 'relative'
     }}>
-      {/* Header Central com Logo Oficial */}
-      <div style={{ textAlign: 'center', maxWidth: '720px', marginBottom: '44px' }} className="fade-in">
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '18px' }}>
+      
+      {/* CARD PRINCIPAL DE LOGIN */}
+      <div className="fade-in" style={{
+        width: '100%',
+        maxWidth: '440px',
+        background: 'linear-gradient(135deg, rgba(7, 19, 63, 0.92) 0%, rgba(2, 8, 23, 0.98) 100%)',
+        border: '1px solid rgba(46, 158, 253, 0.35)',
+        borderRadius: '24px',
+        padding: '36px 32px',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(46, 158, 253, 0.15)',
+        textAlign: 'center',
+        position: 'relative'
+      }}>
+        
+        {/* LOGO */}
+        <div style={{ marginBottom: '24px' }}>
           <img 
             src={scaFlowLogo} 
             alt="ScaFlow" 
             style={{ 
-              height: '200px', 
+              height: '110px', 
               width: 'auto',
-              filter: 'drop-shadow(0 0 25px rgba(46, 158, 253, 0.5))'
+              filter: 'drop-shadow(0 0 20px rgba(46, 158, 253, 0.45))'
             }} 
           />
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#FDFCFD', letterSpacing: '-0.01em', marginTop: '12px' }}>
+            Acesso à Plataforma
+          </h1>
+          <p style={{ fontSize: '0.84rem', color: '#B5BCD7', marginTop: '4px' }}>
+            Entre com suas credenciais de gestor ou atendente
+          </p>
         </div>
 
-        <p style={{ fontSize: '1.08rem', color: '#B5BCD7', lineHeight: 1.6, marginTop: '8px' }}>
-          Sistema Integrado de Fluxo, Triagem e Atendimento em Tempo Real
-        </p>
-      </div>
+        {errorMsg && (
+          <div style={{
+            padding: '10px 14px',
+            borderRadius: '10px',
+            background: 'rgba(239, 68, 68, 0.15)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            color: '#f87171',
+            fontSize: '0.84rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '18px',
+            textAlign: 'left'
+          }}>
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
 
-      {/* Grid de Estações de Trabalho */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-        gap: '24px',
-        width: '100%',
-        maxWidth: '1240px'
-      }}>
-        {profiles.map((p, idx) => (
-          <div
-            key={p.id}
-            onClick={() => onSelectUser(p.id)}
-            className="glass-panel glass-panel-glow"
-            style={{
-              cursor: 'pointer',
-              padding: '32px 24px',
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ textAlign: 'left' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#B5BCD7', marginBottom: '6px' }}>
+              E-mail Profissional
+            </label>
+            <div style={{
               display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              background: 'linear-gradient(135deg, rgba(7, 19, 63, 0.85) 0%, rgba(2, 8, 23, 0.95) 100%)',
-              border: `1px solid ${p.borderColor}`,
-              position: 'relative',
-              overflow: 'hidden'
+              alignItems: 'center',
+              gap: '10px',
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: 'rgba(2, 8, 23, 0.8)',
+              border: '1px solid rgba(93, 94, 252, 0.3)'
+            }}>
+              <Mail size={18} color="#2E9EFD" />
+              <input
+                type="email"
+                required
+                placeholder="seu.email@clinica.com.br"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#FDFCFD',
+                  fontSize: '0.9rem',
+                  width: '100%'
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ textAlign: 'left' }}>
+            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#B5BCD7', marginBottom: '6px' }}>
+              Senha de Acesso
+            </label>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: 'rgba(2, 8, 23, 0.8)',
+              border: '1px solid rgba(93, 94, 252, 0.3)'
+            }}>
+              <Lock size={18} color="#2E9EFD" />
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  outline: 'none',
+                  color: '#FDFCFD',
+                  fontSize: '0.9rem',
+                  width: '100%'
+                }}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary"
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: '14px',
+              fontSize: '0.95rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              marginTop: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
             }}
           >
-            <div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <div style={{
-                  width: '58px',
-                  height: '58px',
-                  borderRadius: '16px',
-                  background: 'rgba(7, 19, 63, 0.9)',
+            <span>{loading ? 'Autenticando...' : 'Entrar no Sistema'}</span>
+            <ArrowRight size={18} />
+          </button>
+        </form>
+
+        {/* ACESSOS RÁPIDOS DE DEMONSTRAÇÃO */}
+        <div style={{ marginTop: '28px', borderTop: '1px solid rgba(93, 94, 252, 0.2)', paddingTop: '20px' }}>
+          <div style={{ fontSize: '0.74rem', color: '#B5BCD7', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.06em', marginBottom: '12px' }}>
+            Acessos Rápidos da Plataforma
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => handleFillDemo('admin@scaflow.com.br', 'admin')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: 'rgba(127, 72, 252, 0.15)',
+                border: '1px solid rgba(127, 72, 252, 0.35)',
+                color: '#c084fc',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Crown size={14} />
+                <strong>SuperAdmin</strong>
+              </div>
+              <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Preencher</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleFillDemo('gestao@hospitalcentral.com.br', '123')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: 'rgba(46, 158, 253, 0.15)',
+                border: '1px solid rgba(46, 158, 253, 0.35)',
+                color: '#2E9EFD',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Building2 size={14} />
+                <strong>Gestor</strong>
+              </div>
+              <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Preencher</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleFillDemo('laura@hospitalcentral.com.br', '123')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: 'rgba(19, 36, 160, 0.25)',
+                border: '1px solid rgba(93, 94, 252, 0.3)',
+                color: '#FDFCFD',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Headphones size={14} />
+                <strong>Atendente</strong>
+              </div>
+              <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Preencher</span>
+            </button>
+          </div>
+
+          {/* Atalhos Diretos para Totem e TV */}
+          {onQuickAccess && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '14px' }}>
+              <button
+                type="button"
+                onClick={() => onQuickAccess('senha')}
+                style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  border: `1px solid ${p.borderColor}`,
-                  boxShadow: `0 8px 20px -4px ${p.borderColor}`
-                }}>
-                  {p.icon}
-                </div>
+                  gap: '6px',
+                  padding: '9px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#FDFCFD',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <Ticket size={15} color="#2E9EFD" />
+                <span>Abrir Totem</span>
+              </button>
 
-                <span style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 800,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  padding: '4px 12px',
-                  borderRadius: '9999px',
-                  background: 'rgba(2, 8, 23, 0.6)',
-                  color: p.badgeColor,
-                  border: `1px solid ${p.borderColor}`
-                }}>
-                  {p.badge}
-                </span>
-              </div>
-
-              <h2 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '8px', color: '#FDFCFD' }}>
-                {p.title}
-              </h2>
-
-              <p style={{ fontSize: '0.9rem', color: '#B5BCD7', lineHeight: 1.5, marginBottom: '22px' }}>
-                {p.description}
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
-                {p.features.map((feat, fIdx) => (
-                  <div key={fIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', color: '#FDFCFD' }}>
-                    <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: p.badgeColor }} />
-                    <span>{feat}</span>
-                  </div>
-                ))}
-              </div>
+              <button
+                type="button"
+                onClick={() => onQuickAccess('painel')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '9px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#FDFCFD',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                <Tv size={15} color="#7F48FC" />
+                <span>Abrir Painel TV</span>
+              </button>
             </div>
+          )}
 
-            <button
-              style={{
-                width: '100%',
-                padding: '13px 18px',
-                borderRadius: '12px',
-                background: 'rgba(19, 36, 160, 0.35)',
-                border: `1px solid ${p.borderColor}`,
-                color: '#FDFCFD',
-                fontWeight: 700,
-                fontSize: '0.92rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--gradient-symbol)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(19, 36, 160, 0.35)';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              <span>{p.btnLabel}</span>
-              <ArrowRight size={16} />
-            </button>
-          </div>
-        ))}
+        </div>
+
       </div>
 
-      <div style={{ marginTop: '45px', fontSize: '0.82rem', color: '#7e8bb6', textAlign: 'center' }}>
-        <span>ScaFlow v3.1 · Plataforma de Gestão de Filas e Atendimento Médico</span>
-      </div>
     </div>
   );
 }

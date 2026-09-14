@@ -11,7 +11,7 @@ import {
 import { socket } from '../socket';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
 
-export default function Navbar({ currentUser, onSwitchUser }) {
+export default function Navbar({ currentUser, tenant, onSwitchUser }) {
   const [time, setTime] = useState(new Date().toLocaleTimeString('pt-BR'));
   const [connected, setConnected] = useState(socket.connected);
 
@@ -34,34 +34,38 @@ export default function Navbar({ currentUser, onSwitchUser }) {
   }, []);
 
   const getRoleBadge = () => {
-    switch (currentUser) {
-      case 'admin':
-        return {
-          label: 'Gestão Geral · Painel de Controle',
-          icon: <ShieldCheck size={16} />,
-          color: '#2E9EFD'
-        };
-      case 'laura':
-        return {
-          label: 'Laura · Atendimento de Balcão',
-          icon: <Headphones size={16} />,
-          color: '#5D5EFC'
-        };
-      case 'senha':
-        return {
-          label: 'Terminal de Emissão · Autoatendimento',
-          icon: <Ticket size={16} />,
-          color: '#7F48FC'
-        };
-      case 'painel':
-        return {
-          label: 'Monitor Público · Sala de Espera',
-          icon: <Tv size={16} />,
-          color: '#286DFC'
-        };
-      default:
-        return { label: 'Acesso Livre', icon: null, color: '#B5BCD7' };
+    const role = typeof currentUser === 'object' ? currentUser?.role : currentUser;
+    const userName = typeof currentUser === 'object' ? currentUser?.name : 'Laura';
+
+    if (role === 'admin') {
+      return {
+        label: `${userName} · Gestão Geral`,
+        icon: <ShieldCheck size={16} />,
+        color: '#2E9EFD'
+      };
     }
+    if (role === 'atendente' || currentUser === 'laura') {
+      return {
+        label: `${userName} · Atendimento de Balcão`,
+        icon: <Headphones size={16} />,
+        color: '#5D5EFC'
+      };
+    }
+    if (role === 'senha' || role === 'totem') {
+      return {
+        label: 'Terminal de Emissão · Autoatendimento',
+        icon: <Ticket size={16} />,
+        color: '#7F48FC'
+      };
+    }
+    if (role === 'painel') {
+      return {
+        label: 'Monitor Público · Sala de Espera',
+        icon: <Tv size={16} />,
+        color: '#286DFC'
+      };
+    }
+    return { label: userName || 'Acesso Livre', icon: null, color: '#B5BCD7' };
   };
 
   const role = getRoleBadge();
@@ -79,7 +83,7 @@ export default function Navbar({ currentUser, onSwitchUser }) {
       top: 0,
       zIndex: 100
     }}>
-      {/* Logo ScaFlow */}
+      {/* Logo ScaFlow & Nome do Cliente */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img 
@@ -91,6 +95,21 @@ export default function Navbar({ currentUser, onSwitchUser }) {
               filter: 'drop-shadow(0 0 12px rgba(46, 158, 253, 0.45))'
             }} 
           />
+          {tenant?.name && (
+            <span style={{
+              fontSize: '0.86rem',
+              color: '#FDFCFD',
+              fontWeight: 700,
+              borderLeft: '1px solid rgba(93, 94, 252, 0.35)',
+              paddingLeft: '12px',
+              maxWidth: '220px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
+              {tenant.name}
+            </span>
+          )}
         </div>
       </div>
 

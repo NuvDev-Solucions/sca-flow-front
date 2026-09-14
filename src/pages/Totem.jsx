@@ -16,42 +16,115 @@ import {
   UserCheck,
   Apple,
   Smile,
-  FlaskConical
+  FlaskConical,
+  Printer,
+  CheckCircle2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { socket, playChimeSound } from '../socket';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
+import { printThermalTicket, DEFAULT_PRINTER_CONFIG } from '../utils/thermalPrinter';
+import { saasService } from '../supabase';
 
-// Especialidades Médicas Diversificadas com Ícones e Descrições
-const SPECIALTY_OPTIONS = [
-  { id: 'clinica_geral', nome: 'Clínica Geral & Acolhimento', sigla: 'CG', descricao: 'Triagem e Avaliação Geral', icon: Stethoscope },
-  { id: 'cardiologia', nome: 'Cardiologia & Check-up', sigla: 'CARD', descricao: 'Avaliação Cardiovascular', icon: Heart },
-  { id: 'pediatria', nome: 'Pediatria & Puericultura', sigla: 'PED', descricao: 'Saúde Infantil e Bebês', icon: Baby },
-  { id: 'ortopedia', nome: 'Ortopedia & Traumatologia', sigla: 'ORT', descricao: 'Ossos e Articulações', icon: Activity },
-  { id: 'ginecologia', nome: 'Ginecologia & Obstetrícia', sigla: 'GIN', descricao: 'Saúde Feminina e Pré-Natal', icon: ShieldCheck },
-  { id: 'dermatologia', nome: 'Dermatologia Clínica', sigla: 'DERM', descricao: 'Cuidados da Pele e Cabelos', icon: Sparkles },
-  { id: 'oftalmologia', nome: 'Oftalmologia & Visão', sigla: 'OFT', descricao: 'Exames de Vista e Refração', icon: Eye },
-  { id: 'neurologia', nome: 'Neurologia & Neurodiagnóstico', sigla: 'NEUR', descricao: 'Sistema Nervoso e Cefaleia', icon: Activity },
-  { id: 'otorrinolaringologia', nome: 'Otorrinolaringologia', sigla: 'OTO', descricao: 'Ouvido, Nariz e Garganta', icon: Activity },
-  { id: 'urologia', nome: 'Urologia & Saúde Masculina', sigla: 'URO', descricao: 'Aparelho Urinário e Renal', icon: UserCheck },
-  { id: 'endocrinologia', nome: 'Endocrinologia & Metabologia', sigla: 'ENDO', descricao: 'Metabolismo e Hormônios', icon: Activity },
-  { id: 'gastroenterologia', nome: 'Gastroenterologia & Digestiva', sigla: 'GAST', descricao: 'Trato Digestivo e Fígado', icon: Pill },
-  { id: 'pneumologia', nome: 'Pneumologia & Respiratória', sigla: 'PNEU', descricao: 'Pulmão e Vias Aéreas', icon: Stethoscope },
-  { id: 'reumatologia', nome: 'Reumatologia Clínica', sigla: 'REUM', descricao: 'Doenças das Articulações', icon: Activity },
-  { id: 'geriatria', nome: 'Geriatria & Longevidade', sigla: 'GER', descricao: 'Cuidado da Melhor Idade', icon: Heart },
-  { id: 'nutricao', nome: 'Nutrição & Dietética', sigla: 'NUTR', descricao: 'Plano Alimentar Saudável', icon: Apple },
-  { id: 'psicologia', nome: 'Psicologia & Saúde Mental', sigla: 'PSI', descricao: 'Suporte Emocional e Terapia', icon: Smile },
-  { id: 'exames_laboratorio', nome: 'Diagnósticos & Coleta', sigla: 'LAB', descricao: 'Análises Clínicas e Sangue', icon: FlaskConical }
-];
+// Dicionário de Ícones Dinâmicos
+const ICON_MAP = {
+  Stethoscope,
+  Heart,
+  Baby,
+  Activity,
+  ShieldCheck,
+  Sparkles,
+  Eye,
+  UserCheck,
+  Pill,
+  Apple,
+  Smile,
+  FlaskConical
+};
 
-export default function Totem() {
+function getServiceIcon(iconName) {
+  if (iconName && ICON_MAP[iconName]) return ICON_MAP[iconName];
+  return Stethoscope;
+}
+
+export default function Totem({ tenantId = 'tenant-demo-01' }) {
+  const [services, setServices] = useState([]);
+  const [priorities, setPriorities] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
+
   const [selectedSpecialty, setSelectedSpecialty] = useState(null);
   const [generatedTicket, setGeneratedTicket] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [modalTimer, setModalTimer] = useState(15);
   const [ticketCountdown, setTicketCountdown] = useState(5);
+  
+  // Configuração da Impressora Térmica (Epson M352A)
+  const [printerConfig, setPrinterConfig] = useState(() => {
+    return saasService.getPrinterConfig(tenantId) || DEFAULT_PRINTER_CONFIG;
+  });
+  const [printStatus, setPrintStatus] = useState(null);
 
   const modalIntervalRef = useRef(null);
+
+  // Carrega serviços e prioridades do banco de dados do tenant
+  useEffect(() => {
+    let isMounted = true;
+    const loadTenantData = async () => {
+      try {
+        setLoadingData(true);
+        const [srvs, prios] = await Promise.all([
+          saasService.fetchServices(tenantId),
+          saasService.fetchPriorities(tenantId)
+        ]);
+        if (isMounted) {
+          setServices(srvs || []);
+          setPriorities(prios || []);
+          const pConfig = saasService.getPrinterConfig(tenantId);
+          if (pConfig) setPrinterConfig(prev => ({ ...prev, ...pConfig }));
+        }
+      } catch (err) {
+        console.error('[Totem] Erro ao carregar dados do tenant:', err);
+      } finally {
+        if (isMounted) setLoadingData(false);
+      }
+    };
+
+    loadTenantData();
+
+    // Escuta atualizações do banco/realtime
+    const unsubscribe = saasService.subscribeToChanges(tenantId, () => {
+      loadTenantData();
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [tenantId]);
+
+  // Sincroniza configurações da impressora com o servidor
+  useEffect(() => {
+    if (socket.connected) {
+      socket.emit('printer:config:get', {}, (res) => {
+        if (res && res.success && res.config) {
+          setPrinterConfig(prev => ({ ...prev, ...res.config }));
+          localStorage.setItem('sca_printer_config', JSON.stringify(res.config));
+        }
+      });
+    }
+
+    const handleConfigUpdated = (cfg) => {
+      if (cfg) {
+        setPrinterConfig(prev => ({ ...prev, ...cfg }));
+        localStorage.setItem('sca_printer_config', JSON.stringify(cfg));
+      }
+    };
+
+    socket.on('printer:config:updated', handleConfigUpdated);
+    return () => {
+      socket.off('printer:config:updated', handleConfigUpdated);
+    };
+  }, []);
 
   // Timer decrescente de 15s no modal de classificação
   useEffect(() => {
@@ -110,21 +183,54 @@ export default function Totem() {
     setSelectedSpecialty(null);
     setGeneratedTicket(null);
     setIsProcessing(false);
+    setPrintStatus(null);
   };
 
   // Emite a senha de acordo com a modalidade selecionada
-  const handleChooseClassification = (prioridadeId) => {
+  const handleChooseClassification = async (prioridadeId) => {
     if (isProcessing || !selectedSpecialty) return;
     setIsProcessing(true);
 
-    socket.emit('ticket:create', {
-      servicoId: selectedSpecialty.id,
-      prioridadeId: prioridadeId
-    }, (res) => {
+    try {
+      const ticket = await saasService.createTicket(tenantId, {
+        serviceId: selectedSpecialty.id,
+        priorityId: prioridadeId
+      });
+
       setIsProcessing(false);
-      if (res && res.success && res.ticket) {
-        setGeneratedTicket(res.ticket);
+
+      if (ticket) {
+        setGeneratedTicket(ticket);
         playChimeSound();
+
+        // Se o socket local estiver ativo, avisa também para sincronização de tela e spool nativo
+        if (socket.connected) {
+          socket.emit('ticket:create', {
+            servicoId: selectedSpecialty.id,
+            prioridadeId: prioridadeId,
+            ticket: ticket
+          });
+        }
+
+        // Disparo ultrarrápido imediato para a impressora térmica (Epson M352A)
+        if (printerConfig.enabled) {
+          setPrintStatus({ printing: true });
+          if (printerConfig.printMethod === 'native') {
+            setTimeout(() => {
+              setPrintStatus({ printing: false, success: true });
+            }, 600);
+          } else {
+            // Método Navegador (Kiosk Printing via iframe)
+            printThermalTicket(ticket, printerConfig)
+              .then(printRes => {
+                setPrintStatus({ printing: false, success: printRes.printed });
+              })
+              .catch(err => {
+                console.error('[Totem] Falha na impressão térmica:', err);
+                setPrintStatus({ printing: false, success: false });
+              });
+          }
+        }
 
         try {
           confetti({
@@ -136,8 +242,19 @@ export default function Totem() {
       } else {
         alert('Falha na emissão da senha. Por favor, tente novamente.');
       }
-    });
+    } catch (err) {
+      setIsProcessing(false);
+      console.error('[Totem] Erro na emissão:', err);
+      alert('Falha na emissão da senha: ' + (err.message || 'Tente novamente.'));
+    }
   };
+
+  // Prioridades a exibir no modal (usa as cadastradas no tenant ou default)
+  const displayPriorities = priorities.length > 0 ? priorities : [
+    { id: 'prio-especial', name: 'Atendimento Especial (80+)', code: 'PE', description: 'Pacientes com 80 anos ou mais e emergências médicas', color: '#ef4444' },
+    { id: 'prio-preferencial', name: 'Atendimento Prioritário', code: 'P', description: 'Idosos (60+), PCD, Gestantes, Lactantes e TEA (Lei 10.048)', color: '#f59e0b' },
+    { id: 'prio-normal', name: 'Atendimento Convencional', code: 'N', description: 'Atendimento ambulatorial por ordem cronológica', color: '#2E9EFD' }
+  ];
 
   return (
     <div style={{
@@ -182,109 +299,122 @@ export default function Totem() {
           </div>
 
           {/* Grid Responsivo de Especialidades */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
-            gap: '16px',
-            width: '100%',
-            maxHeight: 'calc(100vh - 220px)',
-            overflowY: 'auto',
-            padding: '4px 6px 36px 4px'
-          }}>
-            {SPECIALTY_OPTIONS.map((srv) => {
-              const IconComp = srv.icon || Stethoscope;
-              return (
-                <button
-                  key={srv.id}
-                  onClick={() => handleSelectSpecialty(srv)}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    minHeight: '128px',
-                    padding: '20px',
-                    borderRadius: '18px',
-                    background: 'linear-gradient(135deg, rgba(7, 19, 63, 0.92) 0%, rgba(2, 8, 23, 0.98) 100%)',
-                    border: '1px solid rgba(46, 158, 253, 0.28)',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    boxShadow: '0 8px 24px rgba(2, 8, 23, 0.65)',
-                    transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
-                    position: 'relative',
-                    overflow: 'hidden'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(19, 36, 160, 0.65) 0%, #07133F 100%)';
-                    e.currentTarget.style.borderColor = '#2E9EFD';
-                    e.currentTarget.style.transform = 'translateY(-3px)';
-                    e.currentTarget.style.boxShadow = '0 12px 30px rgba(46, 158, 253, 0.45)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(7, 19, 63, 0.92) 0%, rgba(2, 8, 23, 0.98) 100%)';
-                    e.currentTarget.style.borderColor = 'rgba(46, 158, 253, 0.28)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(2, 8, 23, 0.65)';
-                  }}
-                >
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    marginBottom: '12px'
-                  }}>
+          {loadingData ? (
+            <div style={{ padding: '40px', color: '#2E9EFD', fontSize: '1rem', fontWeight: 700 }}>
+              Carregando especialidades disponíveis...
+            </div>
+          ) : services.length === 0 ? (
+            <div style={{ padding: '40px', color: '#B5BCD7', textAlign: 'center' }}>
+              Nenhuma especialidade ativa cadastrada para este terminal.
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
+              gap: '16px',
+              width: '100%',
+              maxHeight: 'calc(100vh - 220px)',
+              overflowY: 'auto',
+              padding: '4px 6px 36px 4px'
+            }}>
+              {services.map((srv) => {
+                const IconComp = getServiceIcon(srv.icon);
+                const srvName = srv.name || srv.nome;
+                const srvCode = srv.code || srv.sigla;
+                const srvDesc = srv.description || srv.descricao || 'Atendimento especializado';
+                return (
+                  <button
+                    key={srv.id}
+                    onClick={() => handleSelectSpecialty(srv)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      minHeight: '128px',
+                      padding: '20px',
+                      borderRadius: '18px',
+                      background: 'linear-gradient(135deg, rgba(7, 19, 63, 0.92) 0%, rgba(2, 8, 23, 0.98) 100%)',
+                      border: '1px solid rgba(46, 158, 253, 0.28)',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      boxShadow: '0 8px 24px rgba(2, 8, 23, 0.65)',
+                      transition: 'all 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, rgba(19, 36, 160, 0.65) 0%, #07133F 100%)';
+                      e.currentTarget.style.borderColor = '#2E9EFD';
+                      e.currentTarget.style.transform = 'translateY(-3px)';
+                      e.currentTarget.style.boxShadow = '0 12px 30px rgba(46, 158, 253, 0.45)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'linear-gradient(135deg, rgba(7, 19, 63, 0.92) 0%, rgba(2, 8, 23, 0.98) 100%)';
+                      e.currentTarget.style.borderColor = 'rgba(46, 158, 253, 0.28)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 8px 24px rgba(2, 8, 23, 0.65)';
+                    }}
+                  >
                     <div style={{
-                      width: '42px',
-                      height: '42px',
-                      borderRadius: '12px',
-                      background: 'rgba(46, 158, 253, 0.15)',
-                      border: '1px solid rgba(46, 158, 253, 0.35)',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#2E9EFD'
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      marginBottom: '12px'
                     }}>
-                      <IconComp size={22} />
+                      <div style={{
+                        width: '42px',
+                        height: '42px',
+                        borderRadius: '12px',
+                        background: 'rgba(46, 158, 253, 0.15)',
+                        border: '1px solid rgba(46, 158, 253, 0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#2E9EFD'
+                      }}>
+                        <IconComp size={22} />
+                      </div>
+
+                      <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '0.75rem',
+                        fontWeight: 800,
+                        color: '#5D5EFC',
+                        letterSpacing: '0.08em',
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        background: 'rgba(93, 94, 252, 0.14)'
+                      }}>
+                        {srvCode}
+                      </span>
                     </div>
 
-                    <span style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '0.75rem',
-                      fontWeight: 800,
-                      color: '#5D5EFC',
-                      letterSpacing: '0.08em',
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      background: 'rgba(93, 94, 252, 0.14)'
-                    }}>
-                      {srv.sigla}
-                    </span>
-                  </div>
-
-                  <div>
-                    <div style={{
-                      color: '#FDFCFD',
-                      fontSize: '1.05rem',
-                      fontWeight: 800,
-                      letterSpacing: '-0.01em',
-                      lineHeight: 1.25,
-                      marginBottom: '4px'
-                    }}>
-                      {srv.nome}
+                    <div>
+                      <div style={{
+                        color: '#FDFCFD',
+                        fontSize: '1.05rem',
+                        fontWeight: 800,
+                        letterSpacing: '-0.01em',
+                        lineHeight: 1.25,
+                        marginBottom: '4px'
+                      }}>
+                        {srvName}
+                      </div>
+                      <div style={{
+                        fontSize: '0.78rem',
+                        color: '#B5BCD7',
+                        fontWeight: 500
+                      }}>
+                        {srvDesc}
+                      </div>
                     </div>
-                    <div style={{
-                      fontSize: '0.78rem',
-                      color: '#B5BCD7',
-                      fontWeight: 500
-                    }}>
-                      {srv.descricao}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -325,168 +455,68 @@ export default function Totem() {
                 letterSpacing: '0.06em',
                 marginTop: '6px'
               }}>
-                {selectedSpecialty.nome}
+                {selectedSpecialty.name || selectedSpecialty.nome}
               </div>
             </div>
 
-            {/* As 3 Opções com Variação Sutil */}
+            {/* Opções Dinâmicas de Prioridade */}
             <div style={{ padding: '0 30px 26px 30px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              
-              {/* Opção 1: Prioridade Especial (Barra Vermelha) */}
-              <button
-                onClick={() => handleChooseClassification('ESPECIAL')}
-                disabled={isProcessing}
-                style={{
-                  width: '100%',
-                  padding: '20px 22px',
-                  borderRadius: '16px',
-                  background: 'rgba(19, 36, 160, 0.28)',
-                  border: '1px solid rgba(93, 94, 252, 0.3)',
-                  borderLeft: '6px solid #ef4444',
-                  color: '#FDFCFD',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  textAlign: 'left'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(19, 36, 160, 0.55)';
-                  e.currentTarget.style.transform = 'translateX(4px)';
-                  e.currentTarget.style.borderColor = '#ef4444';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(19, 36, 160, 0.28)';
-                  e.currentTarget.style.transform = 'translateX(0)';
-                  e.currentTarget.style.borderColor = 'rgba(93, 94, 252, 0.3)';
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
-                    Atendimento Especial (80+)
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#B5BCD7', marginTop: '3px' }}>
-                    Pacientes acima de 80 anos ou prioridade médica legal
-                  </div>
-                </div>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#FDFCFD'
-                }}>
-                  <ChevronRight size={22} />
-                </div>
-              </button>
-
-              {/* Opção 2: Preferencial (Barra Âmbar) */}
-              <button
-                onClick={() => handleChooseClassification('PREFERENCIAL')}
-                disabled={isProcessing}
-                style={{
-                  width: '100%',
-                  padding: '20px 22px',
-                  borderRadius: '16px',
-                  background: 'rgba(19, 36, 160, 0.28)',
-                  border: '1px solid rgba(93, 94, 252, 0.3)',
-                  borderLeft: '6px solid #f59e0b',
-                  color: '#FDFCFD',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  textAlign: 'left'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(19, 36, 160, 0.55)';
-                  e.currentTarget.style.transform = 'translateX(4px)';
-                  e.currentTarget.style.borderColor = '#f59e0b';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(19, 36, 160, 0.28)';
-                  e.currentTarget.style.transform = 'translateX(0)';
-                  e.currentTarget.style.borderColor = 'rgba(93, 94, 252, 0.3)';
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
-                    Atendimento Prioritário
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#B5BCD7', marginTop: '3px' }}>
-                    Idosos (60+), PCD, Gestantes, Lactantes e TEA (Lei 10.048)
-                  </div>
-                </div>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#FDFCFD'
-                }}>
-                  <ChevronRight size={22} />
-                </div>
-              </button>
-
-              {/* Opção 3: Normal (Barra Azul Elétrico) */}
-              <button
-                onClick={() => handleChooseClassification('NORMAL')}
-                disabled={isProcessing}
-                style={{
-                  width: '100%',
-                  padding: '20px 22px',
-                  borderRadius: '16px',
-                  background: 'rgba(19, 36, 160, 0.28)',
-                  border: '1px solid rgba(93, 94, 252, 0.3)',
-                  borderLeft: '6px solid #2E9EFD',
-                  color: '#FDFCFD',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  textAlign: 'left'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(19, 36, 160, 0.55)';
-                  e.currentTarget.style.transform = 'translateX(4px)';
-                  e.currentTarget.style.borderColor = '#2E9EFD';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(19, 36, 160, 0.28)';
-                  e.currentTarget.style.transform = 'translateX(0)';
-                  e.currentTarget.style.borderColor = 'rgba(93, 94, 252, 0.3)';
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
-                    Atendimento Convencional
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#B5BCD7', marginTop: '3px' }}>
-                    Atendimento ambulatorial por ordem cronológica
-                  </div>
-                </div>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#FDFCFD'
-                }}>
-                  <ChevronRight size={22} />
-                </div>
-              </button>
+              {displayPriorities.map((prio) => {
+                const prioColor = prio.color || '#2E9EFD';
+                return (
+                  <button
+                    key={prio.id}
+                    onClick={() => handleChooseClassification(prio.id)}
+                    disabled={isProcessing}
+                    style={{
+                      width: '100%',
+                      padding: '20px 22px',
+                      borderRadius: '16px',
+                      background: 'rgba(19, 36, 160, 0.28)',
+                      border: '1px solid rgba(93, 94, 252, 0.3)',
+                      borderLeft: `6px solid ${prioColor}`,
+                      color: '#FDFCFD',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = 'rgba(19, 36, 160, 0.55)';
+                      e.currentTarget.style.transform = 'translateX(4px)';
+                      e.currentTarget.style.borderColor = prioColor;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'rgba(19, 36, 160, 0.28)';
+                      e.currentTarget.style.transform = 'translateX(0)';
+                      e.currentTarget.style.borderColor = 'rgba(93, 94, 252, 0.3)';
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
+                        {prio.name || prio.nome}
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#B5BCD7', marginTop: '3px' }}>
+                        {prio.description || prio.descricao || 'Atendimento ambulatorial'}
+                      </div>
+                    </div>
+                    <div style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '50%',
+                      background: 'rgba(255, 255, 255, 0.12)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#FDFCFD'
+                    }}>
+                      <ChevronRight size={22} />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Rodapé: Botão de Retorno com Timer Decrescente */}
@@ -570,35 +600,35 @@ export default function Totem() {
               fontFamily: 'var(--font-mono)',
               fontSize: '4.8rem',
               fontWeight: 900,
-              color: generatedTicket.prioridadeCor || '#07133F',
+              color: generatedTicket.prioridadeCor || generatedTicket.priority_color || '#07133F',
               lineHeight: 1.1,
               margin: '8px 0'
             }}>
-              {generatedTicket.codigo}
+              {generatedTicket.codigo || generatedTicket.code}
             </div>
 
             <div style={{
               display: 'inline-block',
               padding: '4px 16px',
               borderRadius: '9999px',
-              background: `${generatedTicket.prioridadeCor}22`,
-              color: generatedTicket.prioridadeCor,
+              background: `${generatedTicket.prioridadeCor || generatedTicket.priority_color || '#2E9EFD'}22`,
+              color: generatedTicket.prioridadeCor || generatedTicket.priority_color || '#2E9EFD',
               fontWeight: 800,
               fontSize: '0.9rem',
               marginBottom: '16px'
             }}>
-              {generatedTicket.prioridadeNome}
+              {generatedTicket.prioridadeNome || generatedTicket.priority_name}
             </div>
 
             <div style={{ borderTop: '1px solid #e2e8f0', borderBottom: '1px solid #e2e8f0', padding: '16px 0', margin: '12px 0', textAlign: 'left', fontSize: '0.9rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span style={{ color: '#64748b' }}>Especialidade:</span>
-                <strong style={{ color: '#07133F' }}>{generatedTicket.servicoNome}</strong>
+                <strong style={{ color: '#07133F' }}>{generatedTicket.servicoNome || generatedTicket.service_name}</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#64748b' }}>Data / Hora:</span>
                 <strong style={{ color: '#07133F' }}>
-                  {new Date(generatedTicket.createdAt).toLocaleDateString('pt-BR')} · {new Date(generatedTicket.createdAt).toLocaleTimeString('pt-BR')}
+                  {new Date(generatedTicket.createdAt || generatedTicket.created_at).toLocaleDateString('pt-BR')} · {new Date(generatedTicket.createdAt || generatedTicket.created_at).toLocaleTimeString('pt-BR')}
                 </strong>
               </div>
             </div>
@@ -606,22 +636,83 @@ export default function Totem() {
             <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '12px' }}>
               Aguarde na sala de espera. Seu código será chamado no painel.
             </p>
+
+            {/* STATUS DA IMPRESSÃO TÉRMICA */}
+            {printerConfig.enabled && (
+              <div style={{
+                marginTop: '16px',
+                padding: '10px 14px',
+                borderRadius: '12px',
+                background: printStatus?.printing 
+                  ? 'rgba(46, 158, 253, 0.12)' 
+                  : printStatus?.success 
+                    ? 'rgba(16, 185, 129, 0.12)' 
+                    : 'rgba(241, 245, 249, 0.8)',
+                border: `1px solid ${
+                  printStatus?.printing 
+                    ? 'rgba(46, 158, 253, 0.3)' 
+                    : printStatus?.success 
+                      ? 'rgba(16, 185, 129, 0.3)' 
+                      : '#e2e8f0'
+                }`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                fontSize: '0.84rem',
+                fontWeight: 700,
+                color: printStatus?.printing ? '#0284c7' : printStatus?.success ? '#059669' : '#475569'
+              }}>
+                <Printer size={16} />
+                <span>
+                  {printStatus?.printing 
+                    ? 'Imprimindo comprovante térmico...' 
+                    : printStatus?.success 
+                      ? 'Comprovante impresso com sucesso! Retire abaixo.' 
+                      : 'Comprovante enviado para a impressora.'}
+                </span>
+              </div>
+            )}
           </div>
 
-          <button
-            onClick={handleResetTotem}
-            className="btn-primary"
-            style={{
-              marginTop: '24px',
-              padding: '16px 36px',
-              borderRadius: '16px',
-              fontSize: '1rem',
-              cursor: 'pointer'
-            }}
-          >
-            <span>Concluir ({ticketCountdown}s)</span>
-            <RotateCcw size={18} />
-          </button>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '24px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button
+              onClick={() => {
+                setPrintStatus({ printing: true });
+                printThermalTicket(generatedTicket, printerConfig)
+                  .then(res => setPrintStatus({ printing: false, success: res.printed }))
+                  .catch(() => setPrintStatus({ printing: false, success: false }));
+              }}
+              className="btn-secondary"
+              style={{
+                padding: '16px 28px',
+                borderRadius: '16px',
+                fontSize: '0.96rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              title="Reimprimir uma nova via do comprovante"
+            >
+              <Printer size={18} />
+              <span>Reimprimir Comprovante</span>
+            </button>
+
+            <button
+              onClick={handleResetTotem}
+              className="btn-primary"
+              style={{
+                padding: '16px 36px',
+                borderRadius: '16px',
+                fontSize: '1rem',
+                cursor: 'pointer'
+              }}
+            >
+              <span>Concluir ({ticketCountdown}s)</span>
+              <RotateCcw size={18} />
+            </button>
+          </div>
         </div>
       )}
 

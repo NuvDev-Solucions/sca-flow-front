@@ -25,8 +25,13 @@ import {
   Monitor
 } from 'lucide-react';
 import { socket, formatDuration } from '../socket';
+import { saasService } from '../supabase';
 
-export default function Atendente() {
+export default function Atendente({ user, tenant }) {
+  const currentUsername = user?.login || user?.email?.split('@')[0] || 'laura';
+  const currentDisplayName = user?.name || 'Laura Guimarães';
+  const tenantId = tenant?.id || user?.tenant_id || 'tenant-demo-01';
+
   // Lista dinâmica de guichês ativos configurados na unidade
   const [activeGuiches, setActiveGuiches] = useState(() => {
     try {
@@ -41,13 +46,13 @@ export default function Atendente() {
 
   const [guiche, setGuiche] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('sca_laura_guiche');
+      const saved = sessionStorage.getItem(`sca_${currentUsername}_guiche`);
       if (saved) return saved;
     } catch (e) {}
-    return 'Guichê 01';
+    return user?.assigned_counter || 'Guichê 01';
   });
 
-  // Modal para Laura escolher o posto de trabalho
+  // Modal para atendente escolher o posto de trabalho
   const [showGuicheModal, setShowGuicheModal] = useState(false);
   const [ticketAtual, setTicketAtual] = useState(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
@@ -73,8 +78,8 @@ export default function Atendente() {
 
   // Sincroniza escolha de guichê e escuta atualizações do Admin em tempo real
   useEffect(() => {
-    const savedGuiche = sessionStorage.getItem('sca_laura_guiche');
-    if (!savedGuiche) {
+    const savedGuiche = sessionStorage.getItem(`sca_${currentUsername}_guiche`);
+    if (!savedGuiche && !user?.assigned_counter) {
       setShowGuicheModal(true);
     }
 
@@ -90,65 +95,101 @@ export default function Atendente() {
     };
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
+  }, [currentUsername, user]);
 
-  // Sincroniza estado inicial e socket
+  // Carrega dados (Serviços e Fila)
   useEffect(() => {
-    fetch('/api/services')
-      .then(res => res.json())
-      .then(data => {
-        setServices(data);
-        if (data.length > 0) setTransferServiceId(data[0].id);
-      })
-      .catch(console.error);
-
-    fetch('/api/queue')
-      .then(res => res.json())
-      .then(data => setWaitingQueue(data))
-      .catch(console.error);
-
-    fetch('/api/dashboard')
-      .then(res => res.json())
-      .then(data => {
-        const laura = data.attendants?.find(a => a.username === 'laura');
-        if (laura) {
-          if (laura.ticketAtual) {
-            setTicketAtual(laura.ticketAtual);
-            setStatusAtendente('ATENDENDO');
-          } else if (laura.status === 'PAUSA') {
-            setStatusAtendente('PAUSA');
-            setPausaMotivo(laura.pausaMotivo || 'Pausa');
-          } else {
-            setStatusAtendente('LIVRE');
+    let isMounted = true;
+    const loadData = async () => {
+      try {
+        const [srvs, tkts] = await Promise.all([
+          saasService.fetchServices(tenantId),
+          saasService.fetchTickets(tenantId)
+        ]);
+        if (isMounted) {
+          if (srvs && srvs.length > 0) {
+            setServices(srvs);
+            setTransferServiceId(srvs[0].id);
           }
-          setModoAutomatico(laura.modoAutomatico !== undefined ? !!laura.modoAutomatico : true);
-          setStatsLaura({
-            atendimentosHoje: laura.atendimentosHoje || 0,
-            historico: laura.historico || []
-          });
+          if (tkts) {
+            const waiting = tkts.filter(t => t.status === 'WAITING');
+            setWaitingQueue(waiting);
+            const myCalled = tkts.find(t => t.status === 'CALLED' && (t.attendant_name === currentDisplayName || t.attendant_id === currentUsername));
+            if (myCalled && !ticketAtual) {
+              setTicketAtual(myCalled);
+              setStatusAtendente('ATENDENDO');
+            }
+          }
         }
-      })
-      .catch(console.error);
+      } catch (err) {
+        console.error('[Atendente] Erro ao carregar dados:', err);
+      }
+    };
 
-    const onQueueUpdate = (queue) => setWaitingQueue(queue);
+    loadData();
+
+    const unsub = saasService.subscribeToChanges(tenantId, () => {
+      loadData();
+    });
+
+    return () => {
+      isMounted = false;
+      unsub();
+    };
+  }, [tenantId, currentUsername, currentDisplayName]);
+
+  // Sincroniza socket local se conectado
+  useEffect(() => {
+    if (socket.connected) {
+      fetch('/api/services')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.length > 0) setServices(data);
+        })
+        .catch(() => {});
+
+      fetch('/api/dashboard')
+        .then(res => res.json())
+        .then(data => {
+          const found = data.attendants?.find(a => a.username === currentUsername || a.username === 'laura');
+          if (found) {
+            if (found.ticketAtual) {
+              setTicketAtual(found.ticketAtual);
+              setStatusAtendente('ATENDENDO');
+            } else if (found.status === 'PAUSA') {
+              setStatusAtendente('PAUSA');
+              setPausaMotivo(found.pausaMotivo || 'Pausa');
+            }
+            setModoAutomatico(found.modoAutomatico !== undefined ? !!found.modoAutomatico : true);
+            setStatsLaura({
+              atendimentosHoje: found.atendimentosHoje || 0,
+              historico: found.historico || []
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
+    const onQueueUpdate = (queue) => {
+      if (queue) setWaitingQueue(queue);
+    };
+
     const onStateUpdate = (state) => {
-      const laura = state.attendants?.find(a => a.username === 'laura');
-      if (laura) {
-        if (laura.ticketAtual) {
-          setTicketAtual(laura.ticketAtual);
+      const found = state.attendants?.find(a => a.username === currentUsername || a.username === 'laura');
+      if (found) {
+        if (found.ticketAtual) {
+          setTicketAtual(found.ticketAtual);
           setStatusAtendente('ATENDENDO');
-        } else if (laura.status === 'PAUSA') {
+        } else if (found.status === 'PAUSA') {
           setStatusAtendente('PAUSA');
-          setPausaMotivo(laura.pausaMotivo || 'Pausa');
+          setPausaMotivo(found.pausaMotivo || 'Pausa');
           setTicketAtual(null);
-        } else {
+        } else if (statusAtendente !== 'PAUSA' && !ticketAtual) {
           setStatusAtendente('LIVRE');
-          setTicketAtual(null);
         }
-        setModoAutomatico(laura.modoAutomatico !== undefined ? !!laura.modoAutomatico : true);
         setStatsLaura({
-          atendimentosHoje: laura.atendimentosHoje || 0,
-          historico: laura.historico || []
+          atendimentosHoje: found.atendimentosHoje || 0,
+          historico: found.historico || []
         });
       }
     };
@@ -160,13 +201,13 @@ export default function Atendente() {
       socket.off('queue:update', onQueueUpdate);
       socket.off('state:update', onStateUpdate);
     };
-  }, []);
+  }, [currentUsername]);
 
-  // Cronômetro do atendimento ao vivo
+  // Cronômetro do Atendimento Ativo
   useEffect(() => {
     let interval = null;
-    if (ticketAtual && ticketAtual.calledAt) {
-      const startMs = new Date(ticketAtual.calledAt).getTime();
+    if (ticketAtual) {
+      const startMs = new Date(ticketAtual.calledAt || ticketAtual.called_at || ticketAtual.createdAt || ticketAtual.created_at).getTime() || Date.now();
       const update = () => {
         const secs = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
         setTimerSeconds(secs);
@@ -201,10 +242,12 @@ export default function Atendente() {
   const handleToggleAuto = () => {
     const nextVal = !modoAutomatico;
     setModoAutomatico(nextVal);
-    socket.emit('attendant:toggleAuto', {
-      username: 'laura',
-      enabled: nextVal
-    });
+    if (socket.connected) {
+      socket.emit('attendant:toggleAuto', {
+        username: currentUsername,
+        enabled: nextVal
+      });
+    }
   };
 
   // Entrar em Pausa
@@ -214,10 +257,12 @@ export default function Atendente() {
     setPausaMotivo(motivo);
     setPausaSeconds(0);
 
-    socket.emit('attendant:pause', {
-      username: 'laura',
-      motivo: motivo
-    });
+    if (socket.connected) {
+      socket.emit('attendant:pause', {
+        username: currentUsername,
+        motivo: motivo
+      });
+    }
   };
 
   // Retornar da Pausa
@@ -226,153 +271,169 @@ export default function Atendente() {
     setPausaMotivo(null);
     setPausaSeconds(0);
 
-    socket.emit('attendant:resume', {
-      username: 'laura'
-    });
+    if (socket.connected) {
+      socket.emit('attendant:resume', {
+        username: currentUsername
+      });
+    }
   };
 
-  // Atualiza guichê no backend e salva preferência da Laura
+  // Atualiza guichê
   const handleGuicheChange = (newGuiche) => {
     setGuiche(newGuiche);
     try {
-      sessionStorage.setItem('sca_laura_guiche', newGuiche);
+      sessionStorage.setItem(`sca_${currentUsername}_guiche`, newGuiche);
     } catch (e) {}
-    socket.emit('attendant:update', {
-      username: 'laura',
-      guiche: newGuiche,
-      status: ticketAtual ? 'ATENDENDO' : statusAtendente,
-      modoAutomatico
-    });
+    if (socket.connected) {
+      socket.emit('attendant:update', {
+        username: currentUsername,
+        guiche: newGuiche,
+        status: ticketAtual ? 'ATENDENDO' : statusAtendente,
+        modoAutomatico
+      });
+    }
     setShowGuicheModal(false);
   };
 
   // 1. Chamar Próxima Senha
-  const handleCallNext = () => {
-    socket.emit('ticket:callNext', {
-      username: 'laura',
-      guiche: guiche
-    }, (res) => {
-      if (res && res.success && res.ticket) {
-        setTicketAtual(res.ticket);
+  const handleCallNext = async () => {
+    try {
+      const ticket = await saasService.callNextTicket(tenantId, {
+        attendantId: currentUsername,
+        attendantName: currentDisplayName,
+        counterName: guiche
+      });
+
+      if (ticket) {
+        setTicketAtual(ticket);
         setStatusAtendente('ATENDENDO');
+        if (socket.connected) {
+          socket.emit('tv:call', ticket);
+          socket.emit('attendant:update', {
+            username: currentUsername,
+            guiche,
+            status: 'ATENDENDO',
+            ticketAtual: ticket
+          });
+        }
       } else {
-        alert(res?.message || 'A fila de espera está vazia no momento.');
+        alert('A fila de espera está vazia no momento.');
       }
-    });
+    } catch (err) {
+      console.error('[Atendente] Erro ao chamar próxima senha:', err);
+      alert('A fila de espera está vazia no momento.');
+    }
   };
 
   // 2. Chamar Senha Específica da Lista
-  const handleCallSpecific = (ticketId) => {
-    socket.emit('ticket:callSpecific', {
-      ticketId,
-      username: 'laura',
-      guiche: guiche
-    }, (res) => {
-      if (res && res.success && res.ticket) {
-        setTicketAtual(res.ticket);
+  const handleCallSpecific = async (ticketId) => {
+    try {
+      const tkts = await saasService.fetchTickets(tenantId);
+      const target = tkts.find(t => t.id === ticketId);
+      if (target) {
+        target.status = 'CALLED';
+        target.attendant_name = currentDisplayName;
+        target.counter_name = guiche;
+        const ticket = await saasService.callNextTicket(tenantId, {
+          attendantId: currentUsername,
+          attendantName: currentDisplayName,
+          counterName: guiche,
+          serviceId: target.service_id
+        }) || target;
+
+        setTicketAtual(ticket);
         setStatusAtendente('ATENDENDO');
         setShowFilaModal(false);
+        if (socket.connected) {
+          socket.emit('tv:call', ticket);
+        }
       }
-    });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // 3. Buscar e Chamar por Código
-  const handleCallByCode = (e) => {
+  const handleCallByCode = async (e) => {
     e.preventDefault();
     if (!codeInputValue.trim()) return;
 
-    socket.emit('ticket:callSpecific', {
-      codigo: codeInputValue.trim(),
-      username: 'laura',
-      guiche: guiche
-    }, (res) => {
-      if (res && res.success && res.ticket) {
-        setTicketAtual(res.ticket);
-        setStatusAtendente('ATENDENDO');
+    try {
+      const tkts = await saasService.fetchTickets(tenantId);
+      const found = tkts.find(t => t.status === 'WAITING' && t.codigo?.toLowerCase() === codeInputValue.trim().toLowerCase());
+      if (found) {
+        await handleCallSpecific(found.id);
         setShowCodeModal(false);
         setCodeInputValue('');
       } else {
         alert('Senha não encontrada na fila de espera.');
       }
-    });
+    } catch (err) {
+      alert('Senha não encontrada na fila de espera.');
+    }
   };
 
   // 4. Rechamar Senha Atual
-  const handleRecall = () => {
+  const handleRecall = async () => {
     if (!ticketAtual) return;
-    socket.emit('ticket:recall', {
-      ticketId: ticketAtual.id,
-      username: 'laura',
-      guiche: guiche
-    });
+    const recalled = await saasService.recallTicket(tenantId, ticketAtual.id);
+    if (socket.connected) {
+      socket.emit('tv:call', recalled || ticketAtual);
+    }
   };
 
   // 5. Finalizar Atendimento
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (!ticketAtual) return;
-    socket.emit('ticket:finish', {
-      ticketId: ticketAtual.id,
-      username: 'laura',
-      autoCallNext: modoAutomatico
-    }, (res) => {
-      if (res && res.success) {
-        if (res.nextTicket) {
-          setTicketAtual(res.nextTicket);
-          setStatusAtendente('ATENDENDO');
-        } else {
-          setTicketAtual(null);
-          setStatusAtendente('LIVRE');
-        }
-      }
-    });
+    await saasService.finishTicket(tenantId, ticketAtual.id);
+
+    setStatsLaura(prev => ({
+      atendimentosHoje: prev.atendimentosHoje + 1,
+      historico: [{
+        codigo: ticketAtual.codigo,
+        servico: ticketAtual.servicoNome,
+        duracao: formatDuration(timerSeconds),
+        hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      }, ...prev.historico.slice(0, 9)]
+    }));
+
+    if (modoAutomatico) {
+      handleCallNext();
+    } else {
+      setTicketAtual(null);
+      setStatusAtendente('LIVRE');
+    }
   };
 
   // 6. Não Compareceu (No-Show)
-  const handleNoShow = () => {
+  const handleNoShow = async () => {
     if (!ticketAtual) return;
     if (window.confirm(`Deseja registrar ausência para a senha ${ticketAtual.codigo}?`)) {
-      socket.emit('ticket:noshow', {
-        ticketId: ticketAtual.id,
-        username: 'laura',
-        autoCallNext: modoAutomatico
-      }, (res) => {
-        if (res && res.success) {
-          if (res.nextTicket) {
-            setTicketAtual(res.nextTicket);
-            setStatusAtendente('ATENDENDO');
-          } else {
-            setTicketAtual(null);
-            setStatusAtendente('LIVRE');
-          }
-        }
-      });
+      await saasService.noShowTicket(tenantId, ticketAtual.id);
+      if (modoAutomatico) {
+        handleCallNext();
+      } else {
+        setTicketAtual(null);
+        setStatusAtendente('LIVRE');
+      }
     }
   };
 
   // 7. Confirmar Transferência
-  const handleConfirmTransfer = (e) => {
+  const handleConfirmTransfer = async (e) => {
     e.preventDefault();
     if (!ticketAtual) return;
 
-    socket.emit('ticket:transfer', {
-      ticketId: ticketAtual.id,
-      novoServicoId: transferServiceId,
-      observacao: transferObs,
-      username: 'laura',
-      autoCallNext: modoAutomatico
-    }, (res) => {
-      if (res && res.success) {
-        if (res.nextTicket) {
-          setTicketAtual(res.nextTicket);
-          setStatusAtendente('ATENDENDO');
-        } else {
-          setTicketAtual(null);
-          setStatusAtendente('LIVRE');
-        }
-        setShowTransferModal(false);
-        setTransferObs('');
-      }
-    });
+    await saasService.finishTicket(tenantId, ticketAtual.id);
+    setShowTransferModal(false);
+    setTransferObs('');
+
+    if (modoAutomatico) {
+      handleCallNext();
+    } else {
+      setTicketAtual(null);
+      setStatusAtendente('LIVRE');
+    }
   };
 
   const filteredQueue = waitingQueue.filter(t => 
@@ -412,7 +473,7 @@ export default function Atendente() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#FDFCFD' }}>
-                Laura Guimarães
+                {currentDisplayName}
               </h2>
               <span style={{
                 fontSize: '0.72rem',
@@ -1375,7 +1436,7 @@ export default function Atendente() {
             </div>
 
             <p style={{ fontSize: '0.86rem', color: '#B5BCD7', margin: '16px 0 20px', lineHeight: 1.45 }}>
-              Olá <strong style={{ color: '#FDFCFD' }}>Laura</strong>! O painel central e as TVs de chamada indicarão aos pacientes o guichê ativo que você escolher abaixo:
+              Olá <strong style={{ color: '#FDFCFD' }}>{currentDisplayName.split(' ')[0]}</strong>! O painel central e as TVs de chamada indicarão aos pacientes o guichê ativo que você escolher abaixo:
             </p>
 
             <div style={{

@@ -11,8 +11,9 @@ import {
 } from 'lucide-react';
 import { socket, playChimeSound, speakTicket } from '../socket';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
+import { saasService } from '../supabase';
 
-export default function PainelTV() {
+export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
   const [currentCall, setCurrentCall] = useState(null);
   const [callHistory, setCallHistory] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('pt-BR'));
@@ -28,18 +29,16 @@ export default function PainelTV() {
     return () => clearInterval(timer);
   }, []);
 
-  // Escuta chamadas da TV
+  // Escuta chamadas da TV (via SaaS e Socket Local)
   useEffect(() => {
-    // Carrega dados iniciais do dashboard
-    fetch('/api/dashboard')
-      .then(res => res.json())
-      .then(data => {
-        if (data.lastCalled) setCurrentCall(data.lastCalled);
-        if (data.recentHistory) setCallHistory(data.recentHistory);
-      })
-      .catch(console.error);
+    let isMounted = true;
+    let lastHandledId = null;
 
-    const onTvCall = (ticket) => {
+    const handleNewCall = (ticket) => {
+      if (!ticket) return;
+      if (lastHandledId === `${ticket.id}_${ticket.calledAt || ticket.called_at}`) return;
+      lastHandledId = `${ticket.id}_${ticket.calledAt || ticket.called_at}`;
+
       setCurrentCall(ticket);
       setCallHistory(prev => [ticket, ...prev.filter(t => t.id !== ticket.id)].slice(0, 6));
 
@@ -54,12 +53,62 @@ export default function PainelTV() {
       }, 700);
     };
 
+    // 1. Carrega dados
+    const loadSaaSData = async () => {
+      try {
+        const tkts = await saasService.fetchTickets(tenantId);
+        if (isMounted && tkts) {
+          const calledList = tkts.filter(t => t.status === 'CALLED' || t.status === 'FINISHED');
+          if (calledList.length > 0) {
+            setCurrentCall(calledList[0]);
+            setCallHistory(calledList.slice(1, 7));
+          }
+        }
+      } catch (err) {
+        console.error('[PainelTV] Erro ao carregar tickets:', err);
+      }
+    };
+
+    loadSaaSData();
+
+    // 2. Subscrição em tempo real no Supabase / Local Event
+    const unsub = saasService.subscribeToChanges(tenantId, () => {
+      try {
+        const rawLast = localStorage.getItem('scaflow_last_called_ticket');
+        if (rawLast) {
+          const t = JSON.parse(rawLast);
+          if (t && t.tenant_id === tenantId) {
+            handleNewCall(t);
+          }
+        }
+      } catch (e) {}
+    });
+
+    // 3. Fallback Socket Node.js
+    if (socket.connected) {
+      fetch('/api/dashboard')
+        .then(res => res.json())
+        .then(data => {
+          if (isMounted) {
+            if (data.lastCalled && !currentCall) setCurrentCall(data.lastCalled);
+            if (data.recentHistory && callHistory.length === 0) setCallHistory(data.recentHistory);
+          }
+        })
+        .catch(() => {});
+    }
+
+    const onTvCall = (ticket) => {
+      handleNewCall(ticket);
+    };
+
     socket.on('tv:call', onTvCall);
 
     return () => {
+      isMounted = false;
+      unsub();
       socket.off('tv:call', onTvCall);
     };
-  }, []);
+  }, [tenantId]);
 
   const enableAudio = () => {
     setSoundEnabled(true);

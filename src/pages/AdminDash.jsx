@@ -62,17 +62,24 @@ import {
   Save,
   QrCode,
   HelpCircle,
-  Briefcase
+  Briefcase,
+  Printer,
+  Ticket
 } from 'lucide-react';
 import { socket, formatDuration } from '../socket';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
+import ThermalPrinterConfig from '../components/ThermalPrinterConfig';
+import { saasService } from '../supabase';
 
-export default function AdminDash({ onSwitchUser }) {
+export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPainel }) {
+  const tenantId = tenant?.id || 'tenant-demo-01';
+  const tenantName = tenant?.name || 'Complexo Hospitalar Central';
+
   // Menu Lateral Retrátil
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Roteamento Real via Hash (Abre rotas/janelas diferentes e separadas)
-  const validRoutes = ['visao_geral', 'usuarios', 'unidades', 'consultorios', 'especialidades', 'fila', 'historico'];
+  const validRoutes = ['visao_geral', 'usuarios', 'unidades', 'consultorios', 'especialidades', 'fila', 'historico', 'impressao'];
   const [currentRoute, setCurrentRoute] = useState(() => {
     const hash = window.location.hash.replace(/^#\/?/, '') || 'visao_geral';
     return validRoutes.includes(hash) ? hash : 'visao_geral';
@@ -118,47 +125,14 @@ export default function AdminDash({ onSwitchUser }) {
 
   // Dropdown de Unidades
   const [unidadeDropdownOpen, setUnidadeDropdownOpen] = useState(false);
-  const [selectedUnidade, setSelectedUnidade] = useState('Complexo Hospitalar Central');
+  const [selectedUnidade, setSelectedUnidade] = useState(tenantName);
 
   // Filtros Globais
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPriorityFilter, setSelectedPriorityFilter] = useState('TODAS');
 
-  // Gestão de Operadores & Quadro Clínico
-  const [usersList, setUsersList] = useState([
-    {
-      id: 'COLAB-01',
-      nome: 'Laura Guimarães',
-      login: 'laura.guimaraes',
-      cargo: 'Atendente de Guichê Plena',
-      posto: 'Guichê 01',
-      categoria: 'atendimento',
-      categoriaNome: 'Atendimento & Recepção',
-      cpf: '333.444.555-66',
-      email: 'laura@scaflow.med.br',
-      celular: '(11) 98888-0004',
-      servicosIds: ['clinica_geral', 'pediatria', 'cardiologia', 'ortopedia'],
-      chamadaAuto: true,
-      ativo: true,
-      unidade: 'Complexo Hospitalar Central'
-    },
-    {
-      id: 'COLAB-02',
-      nome: 'Camila Torres',
-      login: 'camila.torres',
-      cargo: 'Acolhimento & Triagem',
-      posto: 'Guichê 02',
-      categoria: 'atendimento',
-      categoriaNome: 'Atendimento & Recepção',
-      cpf: '111.222.333-44',
-      email: 'camila@scaflow.med.br',
-      celular: '(11) 98888-0002',
-      servicosIds: ['clinica_geral', 'oftalmologia'],
-      chamadaAuto: true,
-      ativo: true,
-      unidade: 'Complexo Hospitalar Central'
-    }
-  ]);
+  // Gestão de Operadores & Quadro Clínico (Dinâmico SaaS)
+  const [usersList, setUsersList] = useState([]);
 
   // Filtros e Modo de Visualização dos Colaboradores
   const [userCategoryFilter, setUserCategoryFilter] = useState('TODOS');
@@ -190,119 +164,10 @@ export default function AdminDash({ onSwitchUser }) {
   const [modalDeleteOpen, setModalDeleteOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
 
-  // Gestão de Unidades & Complexos Hospitalares
-  const [unidadesList, setUnidadesList] = useState([
-    {
-      id: 'UNI-01',
-      nome: 'Complexo Hospitalar Central',
-      sigla: 'CHC',
-      empresa: 'Rede ScaFlow Saúde',
-      endereco: 'Av. Paulista, 1500 - Bela Vista, São Paulo/SP',
-      fuso: 'America/Sao_Paulo',
-      fusoNome: 'Brasília (UTC-3)',
-      quantidadeGuiches: 4,
-      proporcaoPref: 2,
-      proporcaoNorm: 1,
-      maxFila: '∞',
-      esperaMin: 15,
-      atendMin: 15,
-      rechamadas: 3,
-      janelaSenhaHoras: 3,
-      formularioDados: true,
-      exibirNomePainel: true,
-      vozTV: true,
-      tutoriaisAtendentes: true,
-      ativo: true,
-      totensCount: 3,
-      paineisCount: 4,
-      consultoriosCount: 6,
-      especialidadesCount: 6,
-      profissionaisCount: 8
-    },
-    {
-      id: 'UNI-02',
-      nome: 'Ambulatório Integrado Sul',
-      sigla: 'AIS',
-      empresa: 'Rede ScaFlow Saúde',
-      endereco: 'Rua Domingos de Morais, 820 - Vila Mariana, São Paulo/SP',
-      fuso: 'America/Sao_Paulo',
-      fusoNome: 'Brasília (UTC-3)',
-      quantidadeGuiches: 3,
-      proporcaoPref: 2,
-      proporcaoNorm: 1,
-      maxFila: '∞',
-      esperaMin: 12,
-      atendMin: 10,
-      rechamadas: 3,
-      janelaSenhaHoras: 2,
-      formularioDados: true,
-      exibirNomePainel: false,
-      vozTV: true,
-      tutoriaisAtendentes: true,
-      ativo: true,
-      totensCount: 2,
-      paineisCount: 2,
-      consultoriosCount: 4,
-      especialidadesCount: 4,
-      profissionaisCount: 5
-    },
-    {
-      id: 'UNI-03',
-      nome: 'Centro Médico Especializado',
-      sigla: 'CME',
-      empresa: 'Instituto Diagnóstico Integrado',
-      endereco: 'Rua Bela Cintra, 450 - Consolação, São Paulo/SP',
-      fuso: 'America/Sao_Paulo',
-      fusoNome: 'Brasília (UTC-3)',
-      quantidadeGuiches: 5,
-      proporcaoPref: 3,
-      proporcaoNorm: 1,
-      maxFila: '∞',
-      esperaMin: 20,
-      atendMin: 15,
-      rechamadas: 3,
-      janelaSenhaHoras: 4,
-      formularioDados: true,
-      exibirNomePainel: true,
-      vozTV: false,
-      tutoriaisAtendentes: true,
-      ativo: true,
-      totensCount: 2,
-      paineisCount: 3,
-      consultoriosCount: 5,
-      especialidadesCount: 5,
-      profissionaisCount: 6
-    },
-    {
-      id: 'UNI-04',
-      nome: 'Unidade Pediátrica Norte',
-      sigla: 'UPN',
-      empresa: 'Complexo Hospitalar Estadual',
-      endereco: 'Av. Braz Leme, 950 - Santana, São Paulo/SP',
-      fuso: 'America/Sao_Paulo',
-      fusoNome: 'Brasília (UTC-3)',
-      quantidadeGuiches: 2,
-      proporcaoPref: 2,
-      proporcaoNorm: 1,
-      maxFila: '50',
-      esperaMin: 10,
-      atendMin: 12,
-      rechamadas: 2,
-      janelaSenhaHoras: 3,
-      formularioDados: true,
-      exibirNomePainel: true,
-      vozTV: true,
-      tutoriaisAtendentes: false,
-      ativo: true,
-      totensCount: 1,
-      paineisCount: 2,
-      consultoriosCount: 3,
-      especialidadesCount: 3,
-      profissionaisCount: 4
-    }
-  ]);
+  // Gestão de Unidades & Complexos Hospitalares (Dinâmico SaaS)
+  const [unidadesList, setUnidadesList] = useState([]);
 
-  const [expandedUnidadeId, setExpandedUnidadeId] = useState('UNI-01');
+  const [expandedUnidadeId, setExpandedUnidadeId] = useState(null);
   const [filtroEmpresaUnidade, setFiltroEmpresaUnidade] = useState('TODAS');
   const [searchUnidadeQuery, setSearchUnidadeQuery] = useState('');
   const [unidadeViewMode, setUnidadeViewMode] = useState('accordion'); // 'accordion' | 'cards'
@@ -366,13 +231,8 @@ export default function AdminDash({ onSwitchUser }) {
   const [nowTimestamp, setNowTimestamp] = useState(Date.now());
   const [soundAlertNotice, setSoundAlertNotice] = useState(false);
 
-  // Live Activity Stream
-  const [recentEvents, setRecentEvents] = useState([
-    { id: 1, time: '14:48', text: 'Senha P003 chamada para Guichê 01', type: 'call' },
-    { id: 2, time: '14:44', text: 'Senha C001 concluída em 6m 20s', type: 'finish' },
-    { id: 3, time: '14:39', text: 'Nova senha E002 emitida para Cardiologia', type: 'emit' },
-    { id: 4, time: '14:31', text: 'Laura Mendes ativou Modo Automático', type: 'system' }
-  ]);
+  // Live Activity Stream (Dinâmico)
+  const [recentEvents, setRecentEvents] = useState([]);
 
   // Atualizador do relógio local
   useEffect(() => {
@@ -380,25 +240,176 @@ export default function AdminDash({ onSwitchUser }) {
     return () => clearInterval(timer);
   }, []);
 
-  // Carga inicial e Socket
+  // Carga e subscrição de dados (Multi-tenant & 100% dinâmico)
   useEffect(() => {
-    fetch('/api/services')
-      .then(res => res.json())
-      .then(data => {
-        setServices(data);
-      })
-      .catch(console.error);
+    let isMounted = true;
 
-    fetch('/api/dashboard')
-      .then(res => res.json())
-      .then(data => {
-        if (data) setStats(prev => ({ ...prev, ...data }));
-      })
-      .catch(console.error);
+    const calculateAnalytics = (tickets, srvs, cntrs) => {
+      const today = new Date().toDateString();
+      const todayTickets = tickets.filter(t => new Date(t.created_at || t.createdAt).toDateString() === today);
+      
+      const waiting = tickets.filter(t => t.status === 'WAITING');
+      const finished = todayTickets.filter(t => t.status === 'FINISHED');
+      const called = tickets.filter(t => t.status === 'CALLED');
+      const noShow = todayTickets.filter(t => t.status === 'NO_SHOW');
 
-    const onStateUpdate = (newState) => {
-      if (newState) setStats(prev => ({ ...prev, ...newState }));
+      // TME: Espera média em segundos
+      let totalWaitSec = 0;
+      let countWait = 0;
+      todayTickets.forEach(t => {
+        if (t.called_at || t.calledAt) {
+          const diff = Math.max(0, Math.floor((new Date(t.called_at || t.calledAt) - new Date(t.created_at || t.createdAt)) / 1000));
+          totalWaitSec += diff;
+          countWait++;
+        }
+      });
+      const tmeSegundos = countWait > 0 ? Math.round(totalWaitSec / countWait) : 180;
+
+      // TMA: Atendimento médio em segundos
+      let totalAttSec = 0;
+      let countAtt = 0;
+      finished.forEach(t => {
+        if (t.finished_at || t.finishedAt) {
+          const diff = Math.max(0, Math.floor((new Date(t.finished_at || t.finishedAt) - new Date(t.called_at || t.calledAt)) / 1000));
+          totalAttSec += diff;
+          countAtt++;
+        }
+      });
+      const tmaSegundos = countAtt > 0 ? Math.round(totalAttSec / countAtt) : 360;
+
+      // Resumo por Serviço
+      const servicosResumo = (srvs || []).map(s => {
+        const srvTickets = todayTickets.filter(t => t.service_id === s.id);
+        const srvWait = waiting.filter(t => t.service_id === s.id);
+        const srvDone = finished.filter(t => t.service_id === s.id);
+        return {
+          id: s.id,
+          nome: s.name || s.nome,
+          sigla: s.code || s.sigla,
+          emitidas: srvTickets.length,
+          atendidas: srvDone.length,
+          espera: srvWait.length,
+          tmeSegundos: tmeSegundos,
+          taxaConclusao: srvTickets.length > 0 ? Math.round((srvDone.length / srvTickets.length) * 100) : 100
+        };
+      });
+
+      // Mapeia consultórios/atendentes
+      const attendants = (cntrs || []).map(c => ({
+        username: c.name.toLowerCase().replace(/\s+/g, '_'),
+        nome: c.name,
+        guiche: c.name,
+        status: c.status || 'LIVRE',
+        modoAutomatico: c.auto_mode !== false,
+        atendimentosHoje: finished.filter(t => t.counter_name === c.name).length,
+        ticketAtual: called.find(t => t.counter_name === c.name) || null
+      }));
+
+      return {
+        kpis: {
+          filaTotal: waiting.length,
+          tmeSegundos,
+          atendimentosDia: finished.length,
+          tmaSegundos,
+          emAtendimento: called.length,
+          naoCompareceuDia: noShow.length,
+          totalEmitidasHoje: todayTickets.length
+        },
+        capacidade: {
+          activeAttendants: attendants.filter(a => a.status === 'ATENDENDO' || a.status === 'LIVRE').length,
+          capacidadeHora: 15,
+          demandaHora: waiting.length + 4,
+          taxaOcupacao: Math.min(100, Math.round(((called.length + 1) / Math.max(1, attendants.length)) * 100)),
+          status: waiting.length > 10 ? 'ALERTA' : 'ADEQUADA',
+          mensagem: waiting.length > 10 ? 'Demanda elevada. Recomenda-se acionar guichê de apoio.' : 'Fluxo estável. Consultórios operando dentro da margem de conforto.'
+        },
+        servicosResumo,
+        waitingQueue: waiting,
+        attendants,
+        recentHistory: finished.slice(0, 10),
+        alertInfo: null
+      };
     };
+
+    const loadTenantData = async () => {
+      try {
+        const [users, units, srvs, cntrs, tkts] = await Promise.all([
+          saasService.fetchUsers(tenantId),
+          saasService.fetchUnits(tenantId),
+          saasService.fetchServices(tenantId),
+          saasService.fetchCounters(tenantId),
+          saasService.fetchTickets(tenantId)
+        ]);
+
+        if (isMounted) {
+          if (users) {
+            setUsersList(users.map(u => ({
+              id: u.id,
+              nome: u.name,
+              login: u.email?.split('@')[0] || (u.name || 'user').toLowerCase().replace(/\s+/g, '.'),
+              cargo: u.position || 'Operador Clínico',
+              posto: u.assigned_counter || 'Guichê 01',
+              categoria: u.role === 'admin' ? 'supervisao' : 'atendimento',
+              categoriaNome: u.role === 'admin' ? 'Diretoria & Gestão' : 'Atendimento & Recepção',
+              cpf: '—',
+              email: u.email,
+              celular: '—',
+              servicosIds: u.assigned_services || [],
+              chamadaAuto: true,
+              ativo: true,
+              unidade: tenantName
+            })));
+          }
+
+          if (units && units.length > 0) {
+            setUnidadesList(units.map(u => ({
+              id: u.id,
+              nome: u.name,
+              sigla: (u.name || 'UNI').split(' ').map(w => w[0]).slice(0, 3).join('').toUpperCase() || 'UNI',
+              empresa: tenantName,
+              endereco: u.address ? `${u.address} - ${u.city || ''}` : 'Endereço Principal',
+              fuso: 'America/Sao_Paulo',
+              fusoNome: 'Brasília (UTC-3)',
+              quantidadeGuiches: 4,
+              proporcaoPref: 2,
+              proporcaoNorm: 1,
+              maxFila: '∞',
+              esperaMin: 15,
+              atendMin: 15,
+              rechamadas: 3,
+              janelaSenhaHoras: 3,
+              formularioDados: true,
+              exibirNomePainel: true,
+              vozTV: true,
+              tutoriaisAtendentes: true,
+              ativo: u.is_active !== false,
+              totensCount: 1,
+              paineisCount: 1,
+              consultoriosCount: (cntrs || []).length,
+              especialidadesCount: (srvs || []).length,
+              profissionaisCount: (users || []).length
+            })));
+            setSelectedUnidade(units[0].name);
+          } else {
+            setSelectedUnidade(tenantName);
+          }
+
+          if (srvs) setServices(srvs);
+
+          const analytics = calculateAnalytics(tkts || [], srvs || [], cntrs || []);
+          setStats(analytics);
+        }
+      } catch (e) {
+        console.error('[AdminDash] Erro ao carregar dados do tenant:', e);
+      }
+    };
+
+    loadTenantData();
+
+    // Subscrição em tempo real no Supabase / Local Event
+    const unsubscribe = saasService.subscribeToChanges(tenantId, () => {
+      loadTenantData();
+    });
 
     const onTvCall = (ticket) => {
       if (ticket) {
@@ -428,16 +439,16 @@ export default function AdminDash({ onSwitchUser }) {
       }
     };
 
-    socket.on('state:update', onStateUpdate);
     socket.on('tv:call', onTvCall);
     socket.on('ticket:created', onTicketCreated);
 
     return () => {
-      socket.off('state:update', onStateUpdate);
+      isMounted = false;
+      unsubscribe();
       socket.off('tv:call', onTvCall);
       socket.off('ticket:created', onTicketCreated);
     };
-  }, []);
+  }, [tenantId, tenantName]);
 
   // Alternador de tema visual
   const handleToggleTheme = () => {
@@ -575,7 +586,7 @@ export default function AdminDash({ onSwitchUser }) {
   };
 
   // Salvar Colaborador (Criação / Atualização)
-  const handleSalvarUsuario = (e) => {
+  const handleSalvarUsuario = async (e) => {
     e.preventDefault();
     if (!userFormData.nome.trim() || !userFormData.login.trim()) {
       alert('Por favor, preencha o Nome e o Login do colaborador.');
@@ -587,6 +598,16 @@ export default function AdminDash({ onSwitchUser }) {
       : userFormData.categoria === 'supervisao' 
         ? 'Gestão & Apoio' 
         : 'Atendimento & Recepção';
+
+    const saved = await saasService.saveUser(tenantId, {
+      id: userFormData.id,
+      name: userFormData.nome,
+      position: userFormData.cargo,
+      assigned_counter: userFormData.posto,
+      role: userFormData.categoria === 'supervisao' ? 'admin' : 'atendente',
+      email: userFormData.email || `${userFormData.login.toLowerCase()}@${tenant?.slug || 'clinica'}.com.br`,
+      password: userFormData.senha || '123'
+    });
 
     if (userFormData.id) {
       setUsersList(prev => prev.map(u => {
@@ -609,7 +630,7 @@ export default function AdminDash({ onSwitchUser }) {
         return u;
       }));
     } else {
-      const novoId = `COLAB-${Date.now().toString().slice(-4)}`;
+      const novoId = saved?.id || `COLAB-${Date.now().toString().slice(-4)}`;
       const novoUser = {
         id: novoId,
         nome: userFormData.nome,
@@ -655,14 +676,25 @@ export default function AdminDash({ onSwitchUser }) {
   };
 
   // Confirmar Exclusão de Usuário
-  const handleConfirmarExclusao = () => {
+  const handleConfirmarExclusao = async () => {
     if (!userToDelete) return;
+    try {
+      await saasService.deleteUser(tenantId, userToDelete.id);
+    } catch (e) {}
     setUsersList(prev => prev.filter(u => u.id !== userToDelete.id));
     setModalDeleteOpen(false);
     setUserToDelete(null);
   };
 
-  const { kpis, capacidade, filasSemVazao, servicosResumo, waitingQueue, attendants: rawAttendants, recentHistory } = stats;
+  const { 
+    kpis = { filaTotal: 0, tmeSegundos: 0, atendimentosDia: 0, tmaSegundos: 0, emAtendimento: 0, naoCompareceuDia: 0, totalEmitidasHoje: 0 }, 
+    capacidade = { activeAttendants: 0, taxaOcupacao: 0 }, 
+    filasSemVazao = [], 
+    servicosResumo = [], 
+    waitingQueue = [], 
+    attendants: rawAttendants = [], 
+    recentHistory = [] 
+  } = stats || {};
 
   // O administrador NUNCA participa das estações/consultórios nem da fila de atendimento
   const attendants = useMemo(() => {
@@ -677,45 +709,57 @@ export default function AdminDash({ onSwitchUser }) {
 
   // Cálculo de SLA Legal
   const slaCompliance = useMemo(() => {
-    const totalConcluidos = kpis.atendimentosDia || 0;
+    const totalConcluidos = kpis?.atendimentosDia || 0;
     if (totalConcluidos === 0) return 96;
-    const dentroDaMeta = Math.max(0, totalConcluidos - Math.floor((kpis.tmeSegundos > 900 ? 2 : 0)));
+    const dentroDaMeta = Math.max(0, totalConcluidos - Math.floor(((kpis?.tmeSegundos || 0) > 900 ? 2 : 0)));
     return Math.min(100, Math.round((dentroDaMeta / totalConcluidos) * 100));
-  }, [kpis.atendimentosDia, kpis.tmeSegundos]);
+  }, [kpis?.atendimentosDia, kpis?.tmeSegundos]);
 
   // Estimativa Preditiva de Conclusão da Fila
   const tempoEstimadoRestanteMinutos = useMemo(() => {
-    if (waitingQueue.length === 0) return 0;
-    const tmaMin = Math.max(3, Math.round((kpis.tmaSegundos || 300) / 60));
-    const consultoriosAtivos = Math.max(1, attendants.filter(a => a.status === 'ATENDENDO' || a.status === 'LIVRE').length);
-    return Math.round((waitingQueue.length * tmaMin) / consultoriosAtivos);
-  }, [waitingQueue.length, kpis.tmaSegundos, attendants]);
+    const queue = waitingQueue || [];
+    if (queue.length === 0) return 0;
+    const tmaMin = Math.max(3, Math.round((kpis?.tmaSegundos || 300) / 60));
+    const consultoriosAtivos = Math.max(1, (attendants || []).filter(a => a.status === 'ATENDENDO' || a.status === 'LIVRE').length);
+    return Math.round((queue.length * tmaMin) / consultoriosAtivos);
+  }, [waitingQueue, kpis?.tmaSegundos, attendants]);
 
   // Filtro de Fila em Tempo Real por Busca e Prioridade
   const filteredQueue = useMemo(() => {
-    return waitingQueue.filter(t => {
+    return (waitingQueue || []).filter(t => {
+      if (!t) return false;
+      const cod = t.codigo || t.code || '';
+      const srv = t.servicoNome || t.service_name || '';
+      const nom = t.nomeCliente || t.patient_name || '';
       const matchesSearch = !searchQuery.trim() || 
-        t.codigo.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        t.servicoNome.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (t.nomeCliente && t.nomeCliente.toLowerCase().includes(searchQuery.toLowerCase()));
+        cod.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        srv.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        nom.toLowerCase().includes(searchQuery.toLowerCase());
       
-      const matchesPriority = selectedPriorityFilter === 'TODAS' || t.prioridadeId === selectedPriorityFilter;
+      const pId = t.prioridadeId || t.priority_id || '';
+      const matchesPriority = selectedPriorityFilter === 'TODAS' || pId === selectedPriorityFilter;
       return matchesSearch && matchesPriority;
     });
   }, [waitingQueue, searchQuery, selectedPriorityFilter]);
 
   // Filtro de Colaboradores
   const filteredUsers = useMemo(() => {
-    return usersList.filter(u => {
+    return (usersList || []).filter(u => {
+      if (!u) return false;
       const q = searchUserQuery.trim().toLowerCase();
+      const nom = u.nome || u.name || '';
+      const log = u.login || u.email || '';
+      const car = u.cargo || u.position || '';
+      const pos = u.posto || u.assigned_counter || '';
       const matchesSearch = !q || 
-        u.nome.toLowerCase().includes(q) || 
-        u.login.toLowerCase().includes(q) ||
-        (u.cargo && u.cargo.toLowerCase().includes(q)) ||
-        (u.posto && u.posto.toLowerCase().includes(q));
+        nom.toLowerCase().includes(q) || 
+        log.toLowerCase().includes(q) ||
+        car.toLowerCase().includes(q) ||
+        pos.toLowerCase().includes(q);
 
-      const matchesCategory = userCategoryFilter === 'TODOS' || u.categoria === userCategoryFilter;
-      const matchesStatus = userStatusFilter === 'TODOS' || (userStatusFilter === 'ativo' ? u.ativo : !u.ativo);
+      const cat = u.categoria || (u.role === 'admin' ? 'supervisao' : 'atendimento');
+      const matchesCategory = userCategoryFilter === 'TODOS' || cat === userCategoryFilter;
+      const matchesStatus = userStatusFilter === 'TODOS' || (userStatusFilter === 'ativo' ? u.ativo !== false : u.ativo === false);
 
       return matchesSearch && matchesCategory && matchesStatus;
     });
@@ -723,21 +767,26 @@ export default function AdminDash({ onSwitchUser }) {
 
   // Filtro e Handlers de Unidades de Atendimento
   const filteredUnidades = useMemo(() => {
-    return unidadesList.filter(u => {
+    return (unidadesList || []).filter(u => {
+      if (!u) return false;
       const q = searchUnidadeQuery.trim().toLowerCase();
+      const nom = u.nome || u.name || '';
+      const sig = u.sigla || '';
+      const emp = u.empresa || '';
+      const end = u.endereco || u.address || '';
       const matchesSearch = !q || 
-        u.nome.toLowerCase().includes(q) || 
-        u.sigla.toLowerCase().includes(q) ||
-        (u.empresa && u.empresa.toLowerCase().includes(q)) ||
-        (u.endereco && u.endereco.toLowerCase().includes(q));
+        nom.toLowerCase().includes(q) || 
+        sig.toLowerCase().includes(q) ||
+        emp.toLowerCase().includes(q) ||
+        end.toLowerCase().includes(q);
 
-      const matchesEmpresa = filtroEmpresaUnidade === 'TODAS' || u.empresa === filtroEmpresaUnidade;
+      const matchesEmpresa = filtroEmpresaUnidade === 'TODAS' || emp === filtroEmpresaUnidade;
       return matchesSearch && matchesEmpresa;
     });
   }, [unidadesList, searchUnidadeQuery, filtroEmpresaUnidade]);
 
   const redesEmpresasList = useMemo(() => {
-    return Array.from(new Set(unidadesList.map(u => u.empresa).filter(Boolean)));
+    return Array.from(new Set((unidadesList || []).map(u => u.empresa || u.name).filter(Boolean)));
   }, [unidadesList]);
 
   const handleToggleUnidadeAtivo = (unidadeId) => {
@@ -830,7 +879,7 @@ export default function AdminDash({ onSwitchUser }) {
     setModalUnidadeOpen(true);
   };
 
-  const handleSalvarUnidade = (e) => {
+  const handleSalvarUnidade = async (e) => {
     e.preventDefault();
     if (!unidadeFormData.nome.trim() || !unidadeFormData.sigla.trim()) {
       alert('Por favor, informe o Nome da Unidade e a Sigla.');
@@ -845,6 +894,13 @@ export default function AdminDash({ onSwitchUser }) {
     };
 
     const guichesCount = Math.max(1, parseInt(unidadeFormData.quantidadeGuiches, 10) || 4);
+
+    const saved = await saasService.saveUnit(tenantId, {
+      id: unidadeFormData.id,
+      name: unidadeFormData.nome,
+      address: unidadeFormData.endereco,
+      is_active: unidadeFormData.ativo
+    });
 
     if (unidadeFormData.id) {
       setUnidadesList(prev => prev.map(u => {
@@ -875,7 +931,7 @@ export default function AdminDash({ onSwitchUser }) {
         return u;
       }));
     } else {
-      const novoId = `UNI-0${unidadesList.length + 1}`;
+      const novoId = saved?.id || `UNI-0${unidadesList.length + 1}`;
       const novaUni = {
         id: novoId,
         nome: unidadeFormData.nome,
@@ -906,15 +962,18 @@ export default function AdminDash({ onSwitchUser }) {
       setUnidadesList(prev => [...prev, novaUni]);
     }
 
-    // Atualiza lista de guichês no storage para a Laura e demais telas
+    // Atualiza lista de guichês no storage para demais telas
     const guichesNames = Array.from({ length: guichesCount }, (_, i) => `Guichê ${String(i + 1).padStart(2, '0')}`);
     localStorage.setItem('sca_active_guiches', JSON.stringify(guichesNames));
 
     setModalUnidadeOpen(false);
   };
 
-  const handleConfirmarExclusaoUnidade = () => {
+  const handleConfirmarExclusaoUnidade = async () => {
     if (!unidadeToDelete) return;
+    try {
+      await saasService.deleteUnit(tenantId, unidadeToDelete.id);
+    } catch (e) {}
     setUnidadesList(prev => prev.filter(u => u.id !== unidadeToDelete.id));
     setModalDeleteUnidadeOpen(false);
     setUnidadeToDelete(null);
@@ -1107,13 +1166,14 @@ export default function AdminDash({ onSwitchUser }) {
           {/* Navegação por Rotas Reais */}
           <nav style={{ padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {[
-              { id: 'visao_geral', label: 'Visão Geral & SLA', icon: Activity, badge: `${slaCompliance}%` },
-              { id: 'usuarios', label: 'Quadro Profissional', icon: UserCheck, badge: `${usersList.length}` },
-              { id: 'unidades', label: 'Unidades', icon: Building2, badge: `${unidadesList.length}` },
-              { id: 'consultorios', label: 'Estações & Consultórios', icon: Stethoscope, badge: `${attendants.length}` },
-              { id: 'especialidades', label: 'Especialidades Médicas', icon: Layers, badge: `${servicosResumo.length}` },
-              { id: 'fila', label: 'Fila de Espera ao Vivo', icon: Users, badge: `${waitingQueue.length}` },
-              { id: 'historico', label: 'Histórico do Plantão', icon: History, badge: `${kpis.atendimentosDia}` }
+              { id: 'visao_geral', label: 'Visão Geral & SLA', icon: Activity, badge: `${slaCompliance || 96}%` },
+              { id: 'usuarios', label: 'Quadro Profissional', icon: UserCheck, badge: `${usersList?.length || 0}` },
+              { id: 'unidades', label: 'Unidades', icon: Building2, badge: `${unidadesList?.length || 0}` },
+              { id: 'consultorios', label: 'Estações & Consultórios', icon: Stethoscope, badge: `${attendants?.length || 0}` },
+              { id: 'especialidades', label: 'Especialidades Médicas', icon: Layers, badge: `${servicosResumo?.length || 0}` },
+              { id: 'fila', label: 'Fila de Espera ao Vivo', icon: Users, badge: `${waitingQueue?.length || 0}` },
+              { id: 'historico', label: 'Histórico do Plantão', icon: History, badge: `${kpis?.atendimentosDia || 0}` },
+              { id: 'impressao', label: 'Impressão Térmica (Totem)', icon: Printer, badge: 'Epson' }
             ].map((item) => {
               const Icon = item.icon;
               const isActive = currentRoute === item.id;
@@ -1489,6 +1549,44 @@ export default function AdminDash({ onSwitchUser }) {
               <Volume2 size={16} color="#2E9EFD" />
               <span>Sinal Sonoro (TV)</span>
             </button>
+
+            {onOpenTotem && (
+              <button
+                onClick={onOpenTotem}
+                className="btn-secondary"
+                style={{
+                  padding: '9px 14px',
+                  fontSize: '0.84rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  border: '1px solid rgba(46, 158, 253, 0.4)'
+                }}
+                title="Abrir terminal de autoatendimento para pacientes"
+              >
+                <Ticket size={16} color="#2E9EFD" />
+                <span>Abrir Totem</span>
+              </button>
+            )}
+
+            {onOpenPainel && (
+              <button
+                onClick={onOpenPainel}
+                className="btn-secondary"
+                style={{
+                  padding: '9px 14px',
+                  fontSize: '0.84rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  border: '1px solid rgba(127, 72, 252, 0.4)'
+                }}
+                title="Abrir monitor de chamada da sala de espera"
+              >
+                <Tv size={16} color="#7F48FC" />
+                <span>Abrir TV</span>
+              </button>
+            )}
 
             <button
               onClick={handleExportCSV}
@@ -2114,7 +2212,7 @@ export default function AdminDash({ onSwitchUser }) {
                 }}>
                   {filteredUsers.length > 0 ? (
                     filteredUsers.map((user) => {
-                      const initials = user.nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                      const initials = ((user.nome || user.name || 'U').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('') || 'U').toUpperCase();
                       const isClinico = user.categoria === 'clinico';
                       const isSupervisao = user.categoria === 'supervisao';
                       return (
@@ -2408,7 +2506,7 @@ export default function AdminDash({ onSwitchUser }) {
                     <tbody>
                       {filteredUsers.length > 0 ? (
                         filteredUsers.map((user) => {
-                          const initials = user.nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
+                          const initials = ((user.nome || user.name || 'U').split(' ').filter(Boolean).map(n => n[0]).slice(0, 2).join('') || 'U').toUpperCase();
                           return (
                             <tr key={user.id} style={{ borderBottom: '1px solid rgba(93, 94, 252, 0.08)' }}>
                               <td style={{ padding: '14px 14px' }}>
@@ -4225,6 +4323,13 @@ export default function AdminDash({ onSwitchUser }) {
               </div>
             </section>
           </div>
+        )}
+
+        {/* =======================================================================
+            ROTA 7: IMPRESSÃO TÉRMICA & GESTÃO DA BOBINA EPSON M352A
+            ======================================================================= */}
+        {currentRoute === 'impressao' && (
+          <ThermalPrinterConfig />
         )}
 
       </main>
