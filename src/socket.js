@@ -1,12 +1,13 @@
 // client/src/socket.js
 import { io } from 'socket.io-client';
 
-const URL = window.location.hostname === 'localhost' ? 'http://localhost:4000' : window.location.origin;
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const URL = isLocal ? 'http://localhost:4000' : 'https://dummy-disabled-socket.local';
 
 export const socket = io(URL, {
-  autoConnect: true,
-  reconnection: true,
-  reconnectionAttempts: 20,
+  autoConnect: isLocal,
+  reconnection: isLocal,
+  reconnectionAttempts: 2,
   reconnectionDelay: 1000
 });
 

@@ -9,27 +9,54 @@ import {
   Clock 
 } from 'lucide-react';
 import { socket } from '../socket';
+import { isSupabaseConfigured } from '../supabase';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
 
 export default function Navbar({ currentUser, tenant, onSwitchUser }) {
   const [time, setTime] = useState(new Date().toLocaleTimeString('pt-BR'));
-  const [connected, setConnected] = useState(socket.connected);
+  const [connected, setConnected] = useState(() => {
+    return socket.connected || (isSupabaseConfigured && typeof navigator !== 'undefined' && navigator.onLine);
+  });
 
   useEffect(() => {
     const timer = setInterval(() => {
       setTime(new Date().toLocaleTimeString('pt-BR'));
     }, 1000);
 
+    const updateStatus = () => {
+      const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      setConnected(socket.connected || (isSupabaseConfigured && isOnline));
+    };
+
     const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
+    const onDisconnect = () => {
+      const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+      setConnected(isSupabaseConfigured && isOnline);
+    };
+
+    const handleOnline = () => setConnected(true);
+    const handleOffline = () => setConnected(false);
+    const handleRealtimeStatus = (e) => {
+      if (e.detail?.connected !== undefined) {
+        setConnected(e.detail.connected);
+      }
+    };
 
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('scaflow_realtime_status', handleRealtimeStatus);
+
+    updateStatus();
 
     return () => {
       clearInterval(timer);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('scaflow_realtime_status', handleRealtimeStatus);
     };
   }, []);
 

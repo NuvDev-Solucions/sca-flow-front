@@ -49,3 +49,6 @@ coverage
 .stylelintcache
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+.vercel
+.env*

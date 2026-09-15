@@ -194,7 +194,7 @@ function AppContent() {
                 fontWeight: 700
               }}
             >
-              Voltar ao Cockpit SuperAdmin
+              Voltar ao Painel SuperAdmin
             </button>
           </div>
         )}

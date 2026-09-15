@@ -29,6 +29,7 @@ import { saasService } from '../supabase';
 
 export default function Atendente({ user, tenant }) {
   const currentUsername = user?.login || user?.email?.split('@')[0] || 'laura';
+  const currentDisplayName = user?.name || user?.nome || 'Laura Guimarães';
   const REAL_TENANT_ID = 'f65ac0ed-e001-4da3-87de-8359cdc38762';
   const tenantId = (tenant?.id && tenant.id !== 'tenant-demo-01') 
     ? tenant.id 
@@ -136,9 +137,17 @@ export default function Atendente({ user, tenant }) {
       loadData();
     });
 
+    // Polling preventivo a cada 3 segundos para garantir sincronia mesmo com oscilações de rede
+    const pollInterval = setInterval(() => {
+      if (isMounted) {
+        loadData();
+      }
+    }, 3000);
+
     return () => {
       isMounted = false;
       unsub();
+      clearInterval(pollInterval);
     };
   }, [tenantId, currentUsername, currentDisplayName]);
 

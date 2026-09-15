@@ -119,6 +119,26 @@ export default function SuperAdminDash({ onNavigateToAdmin }) {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // Estado de Exclusão Completa de Tenant (Unidade)
+  const [modalDeleteTenantOpen, setModalDeleteTenantOpen] = useState(false);
+  const [tenantToDelete, setTenantToDelete] = useState(null);
+  const [tenantDeleting, setTenantDeleting] = useState(false);
+
+  const handleConfirmDeleteTenant = async () => {
+    if (!tenantToDelete) return;
+    setTenantDeleting(true);
+    try {
+      await saasService.deleteTenant(tenantToDelete.id);
+      setTenants(prev => prev.filter(t => t.id !== tenantToDelete.id));
+      setModalDeleteTenantOpen(false);
+      setTenantToDelete(null);
+    } catch (err) {
+      alert(`Erro ao excluir unidade/cliente: ${err.message}`);
+    } finally {
+      setTenantDeleting(false);
+    }
+  };
+
   const loadTenants = async () => {
     setLoading(true);
     try {
@@ -774,6 +794,41 @@ export default function SuperAdminDash({ onNavigateToAdmin }) {
                 >
                   {copiedId === t.id ? <Check size={14} /> : <Copy size={14} />}
                   <span>{copiedId === t.id ? 'Copiado para Área de Transferência!' : 'Copiar Links & Acesso para o Cliente'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setTenantToDelete(t);
+                    setModalDeleteTenantOpen(true);
+                  }}
+                  title="Excluir unidade e limpar todos os dados do banco permanentemente"
+                  style={{
+                    width: '100%',
+                    padding: '7px 12px',
+                    borderRadius: '10px',
+                    background: 'rgba(239, 68, 68, 0.08)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    color: '#f87171',
+                    fontWeight: 700,
+                    fontSize: '0.78rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)';
+                    e.currentTarget.style.borderColor = '#ef4444';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                    e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.25)';
+                  }}
+                >
+                  <Trash2 size={13} />
+                  <span>Excluir Unidade / Hospital</span>
                 </button>
               </div>
 
@@ -1475,6 +1530,114 @@ export default function SuperAdminDash({ onNavigateToAdmin }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO DE TENANT (UNIDADE) */}
+      {modalDeleteTenantOpen && tenantToDelete && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(2, 8, 23, 0.85)',
+          backdropFilter: 'blur(10px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #0f172a 0%, #020817 100%)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: '20px',
+            maxWidth: '480px',
+            width: '100%',
+            padding: '28px',
+            boxShadow: '0 25px 65px rgba(0, 0, 0, 0.8), 0 0 35px rgba(239, 68, 68, 0.2)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+              <div style={{
+                width: '44px',
+                height: '44px',
+                borderRadius: '12px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ef4444'
+              }}>
+                <Trash2 size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, color: '#FDFCFD', fontSize: '1.2rem', fontWeight: 900 }}>
+                  Excluir Unidade Hospitalar
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#f87171', fontWeight: 600 }}>
+                  Ação Crítica e Irreversível
+                </span>
+              </div>
+            </div>
+
+            <p style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: '1.5', margin: '0 0 20px 0' }}>
+              Deseja realmente excluir a unidade <strong style={{ color: '#FDFCFD' }}>{tenantToDelete.name}</strong>?
+            </p>
+
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              color: '#fca5a5',
+              fontSize: '0.82rem',
+              marginBottom: '24px'
+            }}>
+              ⚠️ <strong>Aviso de Limpeza Total:</strong> Todos os dados relacionados a este hospital serão apagados permanentemente do banco de dados (consultórios, totens, filas de espera, senhas emitidas, histórico de atendimento e colaboradores).
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button
+                type="button"
+                disabled={tenantDeleting}
+                onClick={() => {
+                  setModalDeleteTenantOpen(false);
+                  setTenantToDelete(null);
+                }}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  color: '#FDFCFD',
+                  fontSize: '0.86rem',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={tenantDeleting}
+                onClick={handleConfirmDeleteTenant}
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: '0.86rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                {tenantDeleting ? <RefreshCw size={16} /> : <Trash2 size={16} />}
+                <span>{tenantDeleting ? 'Excluindo...' : 'Sim, Excluir Tudo'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

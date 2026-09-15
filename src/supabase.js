@@ -1,8 +1,8 @@
 // client/src/supabase.js
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ippwmbnqwlxwwayfmamu.supabase.co';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlwcHdtYm5xd2x4d3dheWZtYW11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzMzYxMDksImV4cCI6MjEwNDkxMjEwOX0.duKO8wsMNUxntK6pHO1AceDuaIU4gS6Pequ--Cje8G8';
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl && 
@@ -306,6 +306,44 @@ export const saasService = {
     return null;
   },
 
+  async deleteTenant(tenantId) {
+    if (isSupabaseConfigured && supabase && tenantId) {
+      // Limpeza prévia manual de segurança em cascata
+      try {
+        await supabase.from('tickets').delete().eq('tenant_id', tenantId);
+        await supabase.from('counters').delete().eq('tenant_id', tenantId);
+        await supabase.from('services').delete().eq('tenant_id', tenantId);
+        await supabase.from('priorities').delete().eq('tenant_id', tenantId);
+        await supabase.from('printer_configs').delete().eq('tenant_id', tenantId);
+        await supabase.from('profiles').delete().eq('tenant_id', tenantId);
+        await supabase.from('units').delete().eq('tenant_id', tenantId);
+        await supabase.from('daily_sequences').delete().eq('tenant_id', tenantId);
+      } catch (cascadeErr) {
+        console.warn('[saasService.deleteTenant] Limpeza prévia tabelas dependentes:', cascadeErr);
+      }
+
+      // Deleta o registro do Tenant principal
+      const { error } = await supabase.from('tenants').delete().eq('id', tenantId);
+      if (error) {
+        console.error('[saasService.deleteTenant] Erro ao deletar tenant:', error);
+        throw new Error(error.message);
+      }
+
+      // Limpa cache local se houver
+      try {
+        const local = localStorage.getItem('scaflow_tenants');
+        if (local) {
+          const list = JSON.parse(local).filter(t => t.id !== tenantId);
+          localStorage.setItem('scaflow_tenants', JSON.stringify(list));
+        }
+      } catch (e) {}
+
+      window.dispatchEvent(new CustomEvent('scaflow_tenants_changed'));
+      return true;
+    }
+    throw new Error('Supabase não configurado para deletar tenant.');
+  },
+
   // --------------------------------------------------------------------------
   // DADOS ESPECÍFICOS DO TENANT (CLÍNICA CLIENTE)
   // --------------------------------------------------------------------------
@@ -461,8 +499,20 @@ export const saasService = {
   async deleteUnit(tenantId, unitId) {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
     if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      // Limpa dados associados a essa unidade antes da deleção para garantir integridade total
+      try {
+        await supabase.from('tickets').delete().eq('unit_id', unitId).eq('tenant_id', effectiveTenantId);
+        await supabase.from('counters').delete().eq('unit_id', unitId).eq('tenant_id', effectiveTenantId);
+      } catch (e) {
+        console.warn('[saasService.deleteUnit] Aviso cascata prévia:', e);
+      }
+
       const { error } = await supabase.from('units').delete().eq('id', unitId).eq('tenant_id', effectiveTenantId);
-      if (error) throw new Error(error.message);
+      if (error) {
+        console.error('[saasService.deleteUnit] Erro Supabase:', error);
+        throw new Error(error.message);
+      }
+      window.dispatchEvent(new CustomEvent('scaflow_units_changed', { detail: { unitId } }));
     }
   },
 
@@ -484,15 +534,46 @@ export const saasService = {
     const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
 
     if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      // Sanitiza payload rigorosamente de acordo com as colunas reais da tabela public.profiles
+      const profilePayload = {
+        tenant_id: effectiveTenantId,
+        name: (userData.name || userData.nome || 'Colaborador').trim(),
+        email: (userData.email || `${(userData.login || 'user').toLowerCase().trim()}@clinica.com.br`).trim(),
+        position: userData.position || userData.cargo || 'Atendente',
+        assigned_counter: userData.assigned_counter || userData.posto || null,
+        role: userData.role || (userData.categoria === 'supervisao' ? 'admin' : 'atendente'),
+        is_active: userData.is_active !== undefined ? userData.is_active : (userData.ativo !== undefined ? userData.ativo : true)
+      };
+
+      if (userData.cpf && userData.cpf !== '—') profilePayload.cpf = userData.cpf;
+      if (userData.phone && userData.phone !== '—') profilePayload.phone = userData.phone;
+      if (userData.celular && userData.celular !== '—') profilePayload.phone = userData.celular;
+      if (Array.isArray(userData.assigned_services)) profilePayload.assigned_services = userData.assigned_services;
+      if (userData.password) profilePayload.password = userData.password;
+
       if (userData.id && isUuid(userData.id)) {
-        const { id, created_at, ...updates } = userData;
-        const { data, error } = await supabase.from('profiles').update(updates).eq('id', id).eq('tenant_id', effectiveTenantId).select().single();
-        if (error) throw new Error(error.message);
+        const { data, error } = await supabase
+          .from('profiles')
+          .update(profilePayload)
+          .eq('id', userData.id)
+          .eq('tenant_id', effectiveTenantId)
+          .select()
+          .single();
+        if (error) {
+          console.error('[saasService.saveUser] Erro ao atualizar perfil:', error);
+          throw new Error(error.message);
+        }
         return data;
       } else {
-        const { id, created_at, ...insertData } = userData;
-        const { data, error } = await supabase.from('profiles').insert({ ...insertData, tenant_id: effectiveTenantId }).select().single();
-        if (error) throw new Error(error.message);
+        const { data, error } = await supabase
+          .from('profiles')
+          .insert(profilePayload)
+          .select()
+          .single();
+        if (error) {
+          console.error('[saasService.saveUser] Erro ao inserir perfil:', error);
+          throw new Error(error.message);
+        }
         return data;
       }
     }
@@ -556,7 +637,7 @@ export const saasService = {
           });
           if (!error && data) {
             const normalized = this.normalizeTicket(data);
-            window.dispatchEvent(new CustomEvent('scaflow_tickets_changed', { detail: normalized }));
+            this.notifyTicketChange(effectiveTenantId, normalized, 'TICKET_CREATED');
             return normalized;
           }
         } catch (e) {
@@ -596,7 +677,7 @@ export const saasService = {
 
           if (!insertErr && inserted) {
             const normalized = this.normalizeTicket(inserted);
-            window.dispatchEvent(new CustomEvent('scaflow_tickets_changed', { detail: normalized }));
+            this.notifyTicketChange(effectiveTenantId, normalized, 'TICKET_CREATED');
             return normalized;
           }
         } catch (directErr) {
@@ -634,6 +715,46 @@ export const saasService = {
     };
   },
 
+  notifyTicketChange(tenantId, ticket = null, type = 'TICKETS_CHANGED') {
+    const normalized = ticket ? this.normalizeTicket(ticket) : null;
+    const payload = {
+      type,
+      ticket: normalized,
+      tenantId,
+      _ts: Date.now()
+    };
+
+    // 1. LocalStorage com timestamp para alertar outras abas e janelas
+    try {
+      localStorage.setItem('scaflow_last_ticket_event', JSON.stringify(payload));
+    } catch (e) {}
+
+    // 2. BroadcastChannel nativo do navegador
+    try {
+      const bc = getTvBroadcastChannel();
+      if (bc) {
+        bc.postMessage(payload);
+      }
+    } catch (e) {}
+
+    // 3. CustomEvent na janela atual
+    try {
+      window.dispatchEvent(new CustomEvent('scaflow_tickets_changed', { detail: payload }));
+    } catch (e) {}
+
+    // 4. Supabase Realtime Broadcast para painéis e atendentes remotos
+    if (isSupabaseConfigured && supabase && tenantId) {
+      try {
+        const ch = supabase.channel(`tenant_${tenantId}`);
+        ch.send({
+          type: 'broadcast',
+          event: 'tickets:changed',
+          payload
+        });
+      } catch (e) {}
+    }
+  },
+
   broadcastTvCall(tenantId, ticket) {
     if (!ticket) return;
     const normalized = this.normalizeTicket(ticket);
@@ -650,7 +771,11 @@ export const saasService = {
     try {
       const bc = getTvBroadcastChannel();
       if (bc) {
-        bc.postMessage(normalized);
+        bc.postMessage({
+          type: 'TV_CALL',
+          ticket: normalized,
+          tenantId
+        });
       }
     } catch (e) {}
 
@@ -800,8 +925,9 @@ export const saasService = {
           .select()
           .single();
         if (updated) {
-          window.dispatchEvent(new CustomEvent('scaflow_tickets_changed'));
-          return this.normalizeTicket(updated);
+          const normalized = this.normalizeTicket(updated);
+          this.notifyTicketChange(tenantId, normalized, 'TICKET_FINISHED');
+          return normalized;
         }
       } catch (e) {
         console.warn('[saasService.finishTicket] Erro Supabase:', e);
@@ -824,8 +950,9 @@ export const saasService = {
           .select()
           .single();
         if (updated) {
-          window.dispatchEvent(new CustomEvent('scaflow_tickets_changed'));
-          return this.normalizeTicket(updated);
+          const normalized = this.normalizeTicket(updated);
+          this.notifyTicketChange(tenantId, normalized, 'TICKET_NO_SHOW');
+          return normalized;
         }
       } catch (e) {
         console.warn('[saasService.noShowTicket] Erro Supabase:', e);
@@ -986,19 +1113,51 @@ export const saasService = {
       callback({ timestamp: Date.now(), detail: e?.detail });
     };
 
+    // 1. Eventos locais na mesma janela/aba
     window.addEventListener('scaflow_tickets_changed', handler);
     window.addEventListener('scaflow_tv_call', handler);
     window.addEventListener('scaflow_counters_changed', handler);
     window.addEventListener('scaflow_services_changed', handler);
 
+    // 2. LocalStorage StorageEvent (sincronização imediata entre abas)
+    const handleStorage = (e) => {
+      if (e.key && (e.key.startsWith('scaflow_') || e.key === 'scaflow_last_ticket_event' || e.key === 'scaflow_last_called_ticket')) {
+        callback({ timestamp: Date.now(), key: e.key });
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    // 3. BroadcastChannel nativo (latência zero entre abas e janelas)
+    const bc = getTvBroadcastChannel();
+    const handleBcMessage = (e) => {
+      if (!e?.data) return;
+      if (!e.data.tenantId || e.data.tenantId === effectiveTenantId) {
+        callback(e.data);
+      }
+    };
+    if (bc) {
+      bc.addEventListener('message', handleBcMessage);
+    }
+
+    // 4. Supabase Realtime (banco Postgres e broadcast entre máquinas distintas)
     let channel = null;
     if (isSupabaseConfigured && supabase) {
+      const chName = `sub_${effectiveTenantId}_${Math.random().toString(36).substring(2, 9)}`;
       channel = supabase
-        .channel(`tenant_${effectiveTenantId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `tenant_id=eq.${effectiveTenantId}` }, (payload) => {
-          callback(payload);
+        .channel(chName)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, (payload) => {
+          const rowTenant = payload.new?.tenant_id || payload.old?.tenant_id;
+          if (!rowTenant || rowTenant === effectiveTenantId) {
+            callback(payload);
+          }
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'counters', filter: `tenant_id=eq.${effectiveTenantId}` }, (payload) => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'counters' }, (payload) => {
+          const rowTenant = payload.new?.tenant_id || payload.old?.tenant_id;
+          if (!rowTenant || rowTenant === effectiveTenantId) {
+            callback(payload);
+          }
+        })
+        .on('broadcast', { event: 'tickets:changed' }, (payload) => {
           callback(payload);
         })
         .on('broadcast', { event: 'tv:call' }, (payload) => {
@@ -1007,7 +1166,11 @@ export const saasService = {
           }
           callback(payload);
         })
-        .subscribe();
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            window.dispatchEvent(new CustomEvent('scaflow_realtime_status', { detail: { connected: true } }));
+          }
+        });
     }
 
     return () => {
@@ -1015,6 +1178,10 @@ export const saasService = {
       window.removeEventListener('scaflow_tv_call', handler);
       window.removeEventListener('scaflow_counters_changed', handler);
       window.removeEventListener('scaflow_services_changed', handler);
+      window.removeEventListener('storage', handleStorage);
+      if (bc) {
+        bc.removeEventListener('message', handleBcMessage);
+      }
       if (channel && supabase) {
         supabase.removeChannel(channel);
       }

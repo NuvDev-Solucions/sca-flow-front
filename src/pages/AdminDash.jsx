@@ -1,33 +1,33 @@
 // client/src/pages/AdminDash.jsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Users, 
-  CheckCircle2, 
-  Clock, 
-  UserX, 
-  AlertTriangle, 
-  TrendingUp, 
-  Activity, 
-  Play, 
-  FileSpreadsheet, 
-  Sparkles, 
-  Headphones, 
-  Check, 
-  LayoutGrid, 
-  List, 
-  UserPlus, 
-  ChevronRight, 
-  ChevronLeft, 
+import {
+  Users,
+  CheckCircle2,
+  Clock,
+  UserX,
+  AlertTriangle,
+  TrendingUp,
+  Activity,
+  Play,
+  FileSpreadsheet,
+  Sparkles,
+  Headphones,
+  Check,
+  LayoutGrid,
+  List,
+  UserPlus,
+  ChevronRight,
+  ChevronLeft,
   ChevronDown,
-  Menu, 
+  Menu,
   Search,
   Bell,
   Volume2,
   Sliders,
-  Layers, 
-  ShieldCheck, 
-  Zap, 
-  Filter, 
+  Layers,
+  ShieldCheck,
+  Zap,
+  Filter,
   ArrowRight,
   RefreshCw,
   LogOut,
@@ -128,8 +128,8 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
   // Dropdown de Unidades
   const [unidadeDropdownOpen, setUnidadeDropdownOpen] = useState(false);
   const [selectedUnidade, setSelectedUnidade] = useState(() => (
-    tenantName.includes('Valadares') 
-      ? 'Hospital Odete Valadares - Unidade Principal' 
+    tenantName.includes('Valadares')
+      ? 'Hospital Odete Valadares - Unidade Principal'
       : tenantName
   ));
 
@@ -269,7 +269,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
       const today = new Date().toDateString();
       const allTkts = tickets || [];
       const todayTickets = allTkts.filter(t => new Date(t.created_at || t.createdAt).toDateString() === today);
-      
+
       const waiting = allTkts.filter(t => t.status === 'WAITING');
       const finished = todayTickets.filter(t => t.status === 'FINISHED');
       const called = allTkts.filter(t => t.status === 'CALLED');
@@ -314,8 +314,8 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
           dentroDaMetaSLA++;
         }
       });
-      const slaComplianceReal = finished.length > 0 
-        ? Math.min(100, Math.round((dentroDaMetaSLA / finished.length) * 100)) 
+      const slaComplianceReal = finished.length > 0
+        ? Math.min(100, Math.round((dentroDaMetaSLA / finished.length) * 100))
         : 100;
 
       // Resumo por Serviço REAL
@@ -362,8 +362,8 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
 
       // Taxa de Ocupação Real dos Consultórios: postos que estão com atendimento em andamento
       const postosAtendendo = attendants.filter(a => a.status === 'ATENDENDO' || a.ticketAtual).length;
-      const taxaOcupacaoReal = attendants.length > 0 
-        ? Math.min(100, Math.round((postosAtendendo / attendants.length) * 100)) 
+      const taxaOcupacaoReal = attendants.length > 0
+        ? Math.min(100, Math.round((postosAtendendo / attendants.length) * 100))
         : 0;
 
       // Filas com Retenção Crítica Real (algum paciente esperando há mais de 15 minutos / 900s)
@@ -478,7 +478,13 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
             setSelectedUnidade(tenantName);
           }
 
-          if (srvs) setServices(srvs);
+          if (srvs) {
+            setServices(srvs.map(s => ({
+              ...s,
+              nome: s.name || s.nome || 'Especialidade',
+              sigla: s.code || s.sigla || 'SRV'
+            })));
+          }
 
           const analytics = calculateAnalytics(tkts || [], srvs || [], cntrs || []);
           setStats(analytics);
@@ -752,63 +758,72 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
       return;
     }
 
-    const catName = userFormData.categoria === 'clinico' 
-      ? 'Corpo Clínico' 
-      : userFormData.categoria === 'supervisao' 
-        ? 'Gestão & Apoio' 
+    const catName = userFormData.categoria === 'clinico'
+      ? 'Corpo Clínico'
+      : userFormData.categoria === 'supervisao'
+        ? 'Gestão & Apoio'
         : 'Atendimento & Recepção';
 
-    const saved = await saasService.saveUser(tenantId, {
-      id: userFormData.id,
-      name: userFormData.nome,
-      position: userFormData.cargo,
-      assigned_counter: userFormData.posto,
-      role: userFormData.categoria === 'supervisao' ? 'admin' : 'atendente',
-      email: userFormData.email || `${userFormData.login.toLowerCase()}@${tenant?.slug || 'clinica'}.com.br`,
-      password: userFormData.senha || '123'
-    });
+    try {
+      const emailGerado = userFormData.email?.trim() || `${userFormData.login.toLowerCase().trim()}@${tenant?.slug || 'clinica'}.com.br`;
 
-    if (userFormData.id) {
-      setUsersList(prev => prev.map(u => {
-        if (u.id === userFormData.id) {
-          return {
-            ...u,
-            nome: userFormData.nome,
-            cargo: userFormData.cargo,
-            posto: userFormData.posto,
-            categoria: userFormData.categoria,
-            categoriaNome: catName,
-            cpf: userFormData.cpf || '—',
-            email: userFormData.email || '—',
-            celular: userFormData.celular || '—',
-            login: userFormData.login,
-            ativo: userFormData.ativo,
-            chamadaAuto: userFormData.chamadaAuto
-          };
-        }
-        return u;
-      }));
-    } else {
-      const novoId = saved?.id || `COLAB-${Date.now().toString().slice(-4)}`;
-      const novoUser = {
-        id: novoId,
-        nome: userFormData.nome,
-        cargo: userFormData.cargo,
-        posto: userFormData.posto,
-        categoria: userFormData.categoria,
-        categoriaNome: catName,
-        login: userFormData.login,
-        cpf: userFormData.cpf || '—',
-        email: userFormData.email || '—',
-        celular: userFormData.celular || '—',
-        servicosIds: [],
-        chamadaAuto: userFormData.chamadaAuto,
-        ativo: userFormData.ativo,
-        unidade: selectedUnidade
-      };
-      setUsersList(prev => [novoUser, ...prev]);
+      const saved = await saasService.saveUser(tenantId, {
+        id: userFormData.id,
+        name: userFormData.nome,
+        position: userFormData.cargo,
+        assigned_counter: userFormData.posto,
+        role: userFormData.categoria === 'supervisao' ? 'admin' : 'atendente',
+        email: emailGerado,
+        cpf: userFormData.cpf,
+        phone: userFormData.celular,
+        password: userFormData.senha || '123'
+      });
+
+      if (userFormData.id) {
+        setUsersList(prev => prev.map(u => {
+          if (u.id === userFormData.id) {
+            return {
+              ...u,
+              nome: userFormData.nome,
+              cargo: userFormData.cargo,
+              posto: userFormData.posto,
+              categoria: userFormData.categoria,
+              categoriaNome: catName,
+              cpf: userFormData.cpf || '—',
+              email: emailGerado,
+              celular: userFormData.celular || '—',
+              login: userFormData.login,
+              ativo: userFormData.ativo,
+              chamadaAuto: userFormData.chamadaAuto
+            };
+          }
+          return u;
+        }));
+      } else {
+        const novoId = saved?.id || `COLAB-${Date.now().toString().slice(-4)}`;
+        const novoUser = {
+          id: novoId,
+          nome: userFormData.nome,
+          cargo: userFormData.cargo,
+          posto: userFormData.posto,
+          categoria: userFormData.categoria,
+          categoriaNome: catName,
+          login: userFormData.login,
+          cpf: userFormData.cpf || '—',
+          email: emailGerado,
+          celular: userFormData.celular || '—',
+          servicosIds: [],
+          chamadaAuto: userFormData.chamadaAuto,
+          ativo: userFormData.ativo,
+          unidade: selectedUnidade
+        };
+        setUsersList(prev => [novoUser, ...prev]);
+      }
+      setModalUserOpen(false);
+    } catch (err) {
+      console.error('[AdminDash] Erro ao salvar colaborador:', err);
+      alert('Erro ao salvar colaborador: ' + (err.message || 'Verifique os dados e tente novamente.'));
     }
-    setModalUserOpen(false);
   };
 
   // Abrir Modal de Vinculação de Especialidades
@@ -839,20 +854,20 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
     if (!userToDelete) return;
     try {
       await saasService.deleteUser(tenantId, userToDelete.id);
-    } catch (e) {}
+    } catch (e) { }
     setUsersList(prev => prev.filter(u => u.id !== userToDelete.id));
     setModalDeleteOpen(false);
     setUserToDelete(null);
   };
 
-  const { 
-    kpis = { filaTotal: 0, tmeSegundos: 0, atendimentosDia: 0, tmaSegundos: 0, emAtendimento: 0, naoCompareceuDia: 0, totalEmitidasHoje: 0 }, 
-    capacidade = { activeAttendants: 0, taxaOcupacao: 0 }, 
-    filasSemVazao = [], 
-    servicosResumo = [], 
-    waitingQueue = [], 
-    attendants: rawAttendants = [], 
-    recentHistory = [] 
+  const {
+    kpis = { filaTotal: 0, tmeSegundos: 0, atendimentosDia: 0, tmaSegundos: 0, emAtendimento: 0, naoCompareceuDia: 0, totalEmitidasHoje: 0 },
+    capacidade = { activeAttendants: 0, taxaOcupacao: 0 },
+    filasSemVazao = [],
+    servicosResumo = [],
+    waitingQueue = [],
+    attendants: rawAttendants = [],
+    recentHistory = []
   } = stats || {};
 
   // O administrador NUNCA participa das estações/consultórios nem da fila de atendimento
@@ -889,11 +904,11 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
       const cod = t.codigo || t.code || '';
       const srv = t.servicoNome || t.service_name || '';
       const nom = t.nomeCliente || t.patient_name || '';
-      const matchesSearch = !searchQuery.trim() || 
-        cod.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      const matchesSearch = !searchQuery.trim() ||
+        cod.toLowerCase().includes(searchQuery.toLowerCase()) ||
         srv.toLowerCase().includes(searchQuery.toLowerCase()) ||
         nom.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       const pId = t.prioridadeId || t.priority_id || '';
       const matchesPriority = selectedPriorityFilter === 'TODAS' || pId === selectedPriorityFilter;
       return matchesSearch && matchesPriority;
@@ -909,8 +924,8 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
       const log = u.login || u.email || '';
       const car = u.cargo || u.position || '';
       const pos = u.posto || u.assigned_counter || '';
-      const matchesSearch = !q || 
-        nom.toLowerCase().includes(q) || 
+      const matchesSearch = !q ||
+        nom.toLowerCase().includes(q) ||
         log.toLowerCase().includes(q) ||
         car.toLowerCase().includes(q) ||
         pos.toLowerCase().includes(q);
@@ -932,8 +947,8 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
       const sig = u.sigla || '';
       const emp = u.empresa || '';
       const end = u.endereco || u.address || '';
-      const matchesSearch = !q || 
-        nom.toLowerCase().includes(q) || 
+      const matchesSearch = !q ||
+        nom.toLowerCase().includes(q) ||
         sig.toLowerCase().includes(q) ||
         emp.toLowerCase().includes(q) ||
         end.toLowerCase().includes(q);
@@ -964,7 +979,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
         const initialGuiches = Array.from({ length: count }, (_, i) => `Guichê ${String(i + 1).padStart(2, '0')}`);
         localStorage.setItem('sca_active_guiches', JSON.stringify(initialGuiches));
       }
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   const handleUpdateUnitOperationalConfig = (unidadeId, updates) => {
@@ -1131,7 +1146,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
     if (!unidadeToDelete) return;
     try {
       await saasService.deleteUnit(tenantId, unidadeToDelete.id);
-    } catch (e) {}
+    } catch (e) { }
     setUnidadesList(prev => prev.filter(u => u.id !== unidadeToDelete.id));
     setModalDeleteUnidadeOpen(false);
     setUnidadeToDelete(null);
@@ -1160,7 +1175,9 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
   return (
     <div style={{
       display: 'flex',
-      minHeight: '100vh',
+      height: '100vh',
+      maxHeight: '100vh',
+      overflow: 'hidden',
       background: 'radial-gradient(circle at 50% 45%, #1324A0 0%, #07133F 45%, #020817 100%)',
       position: 'relative',
       color: '#FDFCFD',
@@ -1168,7 +1185,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
     }}>
 
       {/* =========================================================================
-          1. MENU LATERAL RETRÁTIL NA ESQUERDA (SIDEBAR DE ROTAS)
+          1. MENU LATERAL RETRÁTIL NA ESQUERDA (SIDEBAR DE ROTAS - FIXO)
           ========================================================================= */}
       <aside style={{
         width: sidebarCollapsed ? '76px' : '260px',
@@ -1179,11 +1196,12 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
         flexDirection: 'column',
         justifyContent: 'space-between',
         transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-        position: 'sticky',
-        top: 0,
         height: '100vh',
+        maxHeight: '100vh',
+        flexShrink: 0,
         zIndex: 300,
         boxShadow: '4px 0 24px rgba(0, 0, 0, 0.45)',
+        overflowY: 'auto',
         overflowX: 'hidden'
       }}>
         {/* Bloco Superior */}
@@ -1197,19 +1215,19 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
             borderBottom: '1px solid rgba(93, 94, 252, 0.18)'
           }}>
             {!sidebarCollapsed ? (
-              <div 
+              <div
                 onClick={() => navigateTo('visao_geral')}
                 style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
               >
-                <img 
-                  src={scaFlowLogo} 
-                  alt="ScaFlow" 
-                  style={{ height: '34px', width: 'auto', filter: 'drop-shadow(0 0 10px rgba(46, 158, 253, 0.5))' }} 
+                <img
+                  src={scaFlowLogo}
+                  alt="ScaFlow"
+                  style={{ height: '34px', width: 'auto', filter: 'drop-shadow(0 0 10px rgba(46, 158, 253, 0.5))' }}
                 />
-                <span style={{ 
-                  fontSize: '0.7rem', 
-                  fontWeight: 800, 
-                  color: '#2E9EFD', 
+                <span style={{
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                  color: '#2E9EFD',
                   letterSpacing: '0.08em',
                   background: 'rgba(46, 158, 253, 0.15)',
                   padding: '3px 8px',
@@ -1219,11 +1237,11 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                 </span>
               </div>
             ) : (
-              <img 
-                src={scaFlowLogo} 
-                alt="ScaFlow" 
+              <img
+                src={scaFlowLogo}
+                alt="ScaFlow"
                 onClick={() => navigateTo('visao_geral')}
-                style={{ height: '30px', width: 'auto', cursor: 'pointer' }} 
+                style={{ height: '30px', width: 'auto', cursor: 'pointer' }}
               />
             )}
 
@@ -1465,11 +1483,14 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
           ========================================================================= */}
       <main style={{
         flex: 1,
+        height: '100vh',
+        maxHeight: '100vh',
+        overflowY: 'auto',
+        overflowX: 'hidden',
         padding: '24px 30px',
         maxWidth: '1680px',
         margin: '0 auto',
-        width: '100%',
-        overflowX: 'hidden'
+        width: '100%'
       }}>
 
         {/* ALERTA SONORO DISPARADO (FEEDBACK VISUAL) */}
@@ -1800,7 +1821,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
               marginBottom: '24px'
             }}>
               {/* Card 1: Fila em Espera Atual */}
-              <div 
+              <div
                 onClick={() => navigateTo('fila')}
                 style={{
                   background: 'linear-gradient(135deg, rgba(7, 19, 63, 0.9) 0%, rgba(2, 8, 23, 0.95) 100%)',
@@ -1831,7 +1852,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
               </div>
 
               {/* Card 2: Consultas Realizadas */}
-              <div 
+              <div
                 onClick={() => navigateTo('historico')}
                 style={{
                   background: 'linear-gradient(135deg, rgba(7, 19, 63, 0.9) 0%, rgba(2, 8, 23, 0.95) 100%)',
@@ -1888,7 +1909,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
               </div>
 
               {/* Card 4: Postos Ativos & Ocupação */}
-              <div 
+              <div
                 onClick={() => navigateTo('consultorios')}
                 style={{
                   background: 'linear-gradient(135deg, rgba(7, 19, 63, 0.9) 0%, rgba(2, 8, 23, 0.95) 100%)',
@@ -2429,10 +2450,10 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                   width: '44px',
                                   height: '44px',
                                   borderRadius: '12px',
-                                  background: isClinico 
-                                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' 
-                                    : isSupervisao 
-                                      ? 'linear-gradient(135deg, #7F48FC 0%, #5D5EFC 100%)' 
+                                  background: isClinico
+                                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                                    : isSupervisao
+                                      ? 'linear-gradient(135deg, #7F48FC 0%, #5D5EFC 100%)'
                                       : 'linear-gradient(135deg, #286DFC 0%, #2E9EFD 100%)',
                                   display: 'flex',
                                   alignItems: 'center',
@@ -3125,7 +3146,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                           return (
                             <React.Fragment key={u.id}>
                               {/* Linha Principal da Unidade */}
-                              <tr 
+                              <tr
                                 onClick={() => setExpandedUnidadeId(isExpanded ? null : u.id)}
                                 style={{
                                   background: isExpanded ? 'rgba(46, 158, 253, 0.12)' : 'rgba(2, 8, 23, 0.45)',
@@ -3136,12 +3157,12 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                 }}
                               >
                                 <td style={{ padding: '14px 8px', textAlign: 'center', color: '#2E9EFD' }}>
-                                  <ChevronRight 
-                                    size={16} 
+                                  <ChevronRight
+                                    size={16}
                                     style={{
                                       transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                                       transition: 'transform 0.25s ease'
-                                    }} 
+                                    }}
                                   />
                                 </td>
 
@@ -3778,7 +3799,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                           gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
                                           gap: '8px'
                                         }}>
-                                          <div 
+                                          <div
                                             onClick={() => navigateTo('consultorios')}
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                                             onMouseEnter={(e) => e.currentTarget.style.borderColor = '#2E9EFD'}
@@ -3789,7 +3810,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#f97316', marginTop: '1px' }}>{u.consultoriosCount || 0}</div>
                                           </div>
 
-                                          <div 
+                                          <div
                                             onClick={() => navigateTo('usuarios')}
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                                             onMouseEnter={(e) => e.currentTarget.style.borderColor = '#2E9EFD'}
@@ -3800,7 +3821,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#f97316', marginTop: '1px' }}>{u.profissionaisCount || 6}</div>
                                           </div>
 
-                                          <div 
+                                          <div
                                             onClick={() => navigateTo('especialidades')}
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                                             onMouseEnter={(e) => e.currentTarget.style.borderColor = '#2E9EFD'}
@@ -3811,7 +3832,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#f97316', marginTop: '1px' }}>{u.especialidadesCount || 0}</div>
                                           </div>
 
-                                          <div 
+                                          <div
                                             onClick={() => navigateTo('especialidades')}
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                                             onMouseEnter={(e) => e.currentTarget.style.borderColor = '#2E9EFD'}
@@ -3822,7 +3843,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#f97316', marginTop: '1px' }}>16</div>
                                           </div>
 
-                                          <div 
+                                          <div
                                             onClick={() => navigateTo('fila')}
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                                             onMouseEnter={(e) => e.currentTarget.style.borderColor = '#2E9EFD'}
@@ -3833,7 +3854,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#f97316', marginTop: '1px' }}>{stats?.kpis?.filaTotal || 0}</div>
                                           </div>
 
-                                          <div 
+                                          <div
                                             onClick={() => navigateTo('historico')}
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                                             onMouseEnter={(e) => e.currentTarget.style.borderColor = '#2E9EFD'}
@@ -3844,7 +3865,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#f97316', marginTop: '1px' }}>{stats?.kpis?.naoCompareceuDia || 4}</div>
                                           </div>
 
-                                          <div 
+                                          <div
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center' }}
                                           >
                                             <QrCode size={16} color="#2E9EFD" style={{ margin: '0 auto 2px' }} />
@@ -3852,7 +3873,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                                             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: '#f97316', marginTop: '1px' }}>{u.totensCount || 2}</div>
                                           </div>
 
-                                          <div 
+                                          <div
                                             style={{ background: 'rgba(7, 19, 63, 0.5)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '8px 6px', textAlign: 'center' }}
                                           >
                                             <Tv size={16} color="#2E9EFD" style={{ margin: '0 auto 2px' }} />
@@ -5044,8 +5065,8 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontFamily: 'monospace', color: '#2E9EFD', fontWeight: 700 }}>[{srv.sigla}]</span>
-                        <span style={{ color: '#f8fafc', fontSize: '0.88rem' }}>{srv.nome}</span>
+                        <span style={{ fontFamily: 'monospace', color: '#2E9EFD', fontWeight: 700 }}>[{srv.code || srv.sigla || 'SRV'}]</span>
+                        <span style={{ color: '#f8fafc', fontSize: '0.88rem' }}>{srv.name || srv.nome || 'Especialidade'}</span>
                       </div>
                       <input
                         type="checkbox"

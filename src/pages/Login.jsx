@@ -238,7 +238,7 @@ export default function Login({ onQuickAccess }) {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Building2 size={14} />
-                <strong>Gestor (Dr. Teste)</strong>
+                <strong>Gestor</strong>
               </div>
               <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Preencher</span>
             </button>
@@ -262,7 +262,7 @@ export default function Login({ onQuickAccess }) {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Headphones size={14} />
-                <strong>Atendente (Laura)</strong>
+                <strong>Atendente</strong>
               </div>
               <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Preencher</span>
             </button>
