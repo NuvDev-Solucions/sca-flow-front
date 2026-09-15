@@ -18,13 +18,14 @@ import {
   Smile,
   FlaskConical,
   Printer,
-  CheckCircle2
+  CheckCircle2,
+  Building2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { socket, playChimeSound } from '../socket';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
 import { printThermalTicket, DEFAULT_PRINTER_CONFIG } from '../utils/thermalPrinter';
-import { saasService } from '../supabase';
+import { saasService, isSupabaseConfigured, supabase } from '../supabase';
 
 // Dicionário de Ícones Dinâmicos
 const ICON_MAP = {
@@ -47,7 +48,15 @@ function getServiceIcon(iconName) {
   return Stethoscope;
 }
 
-export default function Totem({ tenantId = 'tenant-demo-01' }) {
+export default function Totem({ tenantId: propTenantId }) {
+  const isUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const tenantId = (propTenantId && isUuid(propTenantId)) ? propTenantId : 'f65ac0ed-e001-4da3-87de-8359cdc38762';
+
+  const [tenantInfo, setTenantInfo] = useState({
+    name: 'Hospital Odete Valadares',
+    unit: 'Unidade Principal'
+  });
+
   const [services, setServices] = useState([]);
   const [priorities, setPriorities] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -66,20 +75,35 @@ export default function Totem({ tenantId = 'tenant-demo-01' }) {
 
   const modalIntervalRef = useRef(null);
 
-  // Carrega serviços e prioridades do banco de dados do tenant
+  // Carrega serviços, prioridades e configuração de impressão do Supabase
   useEffect(() => {
     let isMounted = true;
     const loadTenantData = async () => {
       try {
         setLoadingData(true);
-        const [srvs, prios] = await Promise.all([
+        const [srvs, prios, pConfig] = await Promise.all([
           saasService.fetchServices(tenantId),
-          saasService.fetchPriorities(tenantId)
+          saasService.fetchPriorities(tenantId),
+          saasService.fetchPrinterConfig(tenantId)
         ]);
+
+        if (isSupabaseConfigured && supabase && tenantId) {
+          try {
+            const { data: t } = await supabase.from('tenants').select('name').eq('id', tenantId).maybeSingle();
+            const { data: u } = await supabase.from('units').select('name').eq('tenant_id', tenantId).limit(1).maybeSingle();
+            if (t?.name && isMounted) {
+              setTenantInfo({
+                name: t.name,
+                unit: u?.name || 'Unidade Principal'
+              });
+              document.title = `Totem Autoatendimento · ${t.name}`;
+            }
+          } catch (e) {}
+        }
+
         if (isMounted) {
           setServices(srvs || []);
           setPriorities(prios || []);
-          const pConfig = saasService.getPrinterConfig(tenantId);
           if (pConfig) setPrinterConfig(prev => ({ ...prev, ...pConfig }));
         }
       } catch (err) {
@@ -96,9 +120,17 @@ export default function Totem({ tenantId = 'tenant-demo-01' }) {
       loadTenantData();
     });
 
+    const handlePrinterChange = (e) => {
+      if (e.detail?.config && isMounted) {
+        setPrinterConfig(prev => ({ ...prev, ...e.detail.config }));
+      }
+    };
+    window.addEventListener('scaflow_printer_changed', handlePrinterChange);
+
     return () => {
       isMounted = false;
       unsubscribe();
+      window.removeEventListener('scaflow_printer_changed', handlePrinterChange);
     };
   }, [tenantId]);
 
@@ -286,9 +318,29 @@ export default function Totem({ tenantId = 'tenant-demo-01' }) {
                 height: '95px', 
                 width: 'auto',
                 filter: 'drop-shadow(0 0 24px rgba(46, 158, 253, 0.45))',
-                marginBottom: '14px'
+                marginBottom: '12px'
               }} 
             />
+
+            {/* Identificação de Hospital e Unidade Conectada */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'rgba(46, 158, 253, 0.12)',
+              border: '1px solid rgba(46, 158, 253, 0.35)',
+              padding: '6px 16px',
+              borderRadius: '9999px',
+              marginBottom: '14px',
+              boxShadow: '0 0 16px rgba(46, 158, 253, 0.15)'
+            }}>
+              <Building2 size={15} color="#2E9EFD" />
+              <span style={{ color: '#2E9EFD', fontSize: '0.86rem', fontWeight: 800, letterSpacing: '0.01em' }}>
+                {tenantInfo.name} · {tenantInfo.unit}
+              </span>
+              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#10B981', display: 'inline-block', boxShadow: '0 0 8px #10B981' }} />
+              <span style={{ color: '#10B981', fontSize: '0.74rem', fontWeight: 800 }}>Totem Conectado</span>
+            </div>
 
             <h1 style={{ fontSize: '2rem', fontWeight: 800, color: '#FDFCFD', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
               Selecione a Especialidade
@@ -415,6 +467,25 @@ export default function Totem({ tenantId = 'tenant-demo-01' }) {
               })}
             </div>
           )}
+
+          {/* Rodapé informativo de conexão do Totem */}
+          <div style={{
+            position: 'fixed',
+            bottom: '14px',
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            fontSize: '0.78rem',
+            color: '#64748B',
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px'
+          }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10B981' }} />
+            <span>ScaFlow Totem · {tenantInfo.name} ({tenantInfo.unit}) · Conectado em Tempo Real</span>
+          </div>
         </div>
       )}
 

@@ -221,7 +221,7 @@ export default function Login({ onQuickAccess }) {
 
             <button
               type="button"
-              onClick={() => handleFillDemo('gestao@hospitalcentral.com.br', '123')}
+              onClick={() => handleFillDemo('teste@teste.com', '123')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -238,14 +238,14 @@ export default function Login({ onQuickAccess }) {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Building2 size={14} />
-                <strong>Gestor</strong>
+                <strong>Gestor (Dr. Teste)</strong>
               </div>
               <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Preencher</span>
             </button>
 
             <button
               type="button"
-              onClick={() => handleFillDemo('laura@hospitalcentral.com.br', '123')}
+              onClick={() => handleFillDemo('atendente@hospital.com', '123')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -262,7 +262,7 @@ export default function Login({ onQuickAccess }) {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Headphones size={14} />
-                <strong>Atendente</strong>
+                <strong>Atendente (Laura)</strong>
               </div>
               <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Preencher</span>
             </button>
@@ -271,9 +271,20 @@ export default function Login({ onQuickAccess }) {
           {/* Atalhos Diretos para Totem e TV */}
           {onQuickAccess && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '14px' }}>
-              <button
-                type="button"
-                onClick={() => onQuickAccess('senha')}
+              <a
+                href="#totem"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  const url = `${window.location.origin}/#totem`;
+                  const win = window.open(url, '_blank');
+                  if (win) {
+                    e.preventDefault();
+                    win.focus();
+                  } else if (onQuickAccess) {
+                    onQuickAccess('totem');
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -286,16 +297,28 @@ export default function Login({ onQuickAccess }) {
                   color: '#FDFCFD',
                   fontSize: '0.78rem',
                   fontWeight: 700,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  textDecoration: 'none'
                 }}
               >
                 <Ticket size={15} color="#2E9EFD" />
                 <span>Abrir Totem</span>
-              </button>
+              </a>
 
-              <button
-                type="button"
-                onClick={() => onQuickAccess('painel')}
+              <a
+                href="#painel"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  const url = `${window.location.origin}/#painel`;
+                  const win = window.open(url, '_blank');
+                  if (win) {
+                    e.preventDefault();
+                    win.focus();
+                  } else if (onQuickAccess) {
+                    onQuickAccess('painel');
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -308,12 +331,13 @@ export default function Login({ onQuickAccess }) {
                   color: '#FDFCFD',
                   fontSize: '0.78rem',
                   fontWeight: 700,
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  textDecoration: 'none'
                 }}
               >
                 <Tv size={15} color="#7F48FC" />
                 <span>Abrir Painel TV</span>
-              </button>
+              </a>
             </div>
           )}
 

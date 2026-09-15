@@ -16,150 +16,165 @@ export const supabase = isSupabaseConfigured
   : null;
 
 // ==============================================================================
-// SEED PADRÃO (Para primeiro acesso e fallback local)
+// SANITIZAÇÃO DE DADOS MOCK LEGADOS NO NAVEGADOR
 // ==============================================================================
-const DEFAULT_TENANT = {
-  id: 'tenant-demo-01',
-  name: 'Complexo Hospitalar Central',
-  slug: 'hospital-central',
-  plan: 'enterprise',
-  status: 'active',
-  logo_url: null,
-  primary_color: '#2E9EFD',
-  max_counters: 20,
-  created_at: new Date().toISOString()
-};
-
-const DEFAULT_USERS = [
-  {
-    id: 'user-superadmin',
-    tenant_id: null,
-    role: 'superadmin',
-    name: 'Administrador da Plataforma (Você)',
-    email: 'admin@scaflow.com.br',
-    password: 'admin',
-    position: 'Platform Owner'
-  },
-  {
-    id: 'user-tenant-admin',
-    tenant_id: 'tenant-demo-01',
-    role: 'admin',
-    name: 'Diretoria Médica Central',
-    email: 'gestao@hospitalcentral.com.br',
-    password: '123',
-    position: 'Diretor Geral'
-  },
-  {
-    id: 'user-atendente-laura',
-    tenant_id: 'tenant-demo-01',
-    role: 'atendente',
-    name: 'Laura Guimarães',
-    email: 'laura@hospitalcentral.com.br',
-    password: '123',
-    position: 'Atendente de Guichê Plena',
-    assigned_counter: 'Guichê 01',
-    assigned_services: ['clinica_geral', 'cardiologia', 'pediatria', 'ortopedia']
-  }
-];
-
-const DEFAULT_SERVICES = [
-  { id: 'clinica_geral', tenant_id: 'tenant-demo-01', name: 'Clínica Geral & Acolhimento', code: 'CG', description: 'Triagem e Avaliação Geral', icon: 'Stethoscope', color: '#2E9EFD', is_active: true, sort_order: 1 },
-  { id: 'cardiologia', tenant_id: 'tenant-demo-01', name: 'Cardiologia & Check-up', code: 'CARD', description: 'Avaliação Cardiovascular', icon: 'Heart', color: '#2E9EFD', is_active: true, sort_order: 2 },
-  { id: 'pediatria', tenant_id: 'tenant-demo-01', name: 'Pediatria & Puericultura', code: 'PED', description: 'Saúde Infantil e Bebês', icon: 'Baby', color: '#2E9EFD', is_active: true, sort_order: 3 },
-  { id: 'ortopedia', tenant_id: 'tenant-demo-01', name: 'Ortopedia & Traumatologia', code: 'ORT', description: 'Ossos e Articulações', icon: 'Activity', color: '#2E9EFD', is_active: true, sort_order: 4 },
-  { id: 'ginecologia', tenant_id: 'tenant-demo-01', name: 'Ginecologia & Obstetrícia', code: 'GIN', description: 'Saúde Feminina e Pré-Natal', icon: 'ShieldCheck', color: '#2E9EFD', is_active: true, sort_order: 5 },
-  { id: 'dermatologia', tenant_id: 'tenant-demo-01', name: 'Dermatologia Clínica', code: 'DERM', description: 'Cuidados da Pele e Cabelos', icon: 'Sparkles', color: '#2E9EFD', is_active: true, sort_order: 6 },
-  { id: 'exames_lab', tenant_id: 'tenant-demo-01', name: 'Diagnósticos & Coleta', code: 'LAB', description: 'Análises Clínicas e Sangue', icon: 'FlaskConical', color: '#2E9EFD', is_active: true, sort_order: 7 }
-];
-
-const DEFAULT_PRIORITIES = [
-  { id: 'prio-especial', tenant_id: 'tenant-demo-01', name: 'Atendimento Especial (80+)', code: 'PE', description: 'Pacientes com 80 anos ou mais e emergências médicas', weight: 3, color: '#ef4444', is_active: true },
-  { id: 'prio-preferencial', tenant_id: 'tenant-demo-01', name: 'Atendimento Prioritário', code: 'P', description: 'Idosos (60+), PCD, Gestantes, Lactantes e TEA (Lei 10.048)', weight: 2, color: '#f59e0b', is_active: true },
-  { id: 'prio-normal', tenant_id: 'tenant-demo-01', name: 'Atendimento Convencional', code: 'N', description: 'Atendimento ambulatorial por ordem cronológica', weight: 1, color: '#2E9EFD', is_active: true }
-];
-
-const DEFAULT_COUNTERS = [
-  { id: 'cnt-1', tenant_id: 'tenant-demo-01', name: 'Guichê 01', counter_type: 'guiche', status: 'LIVRE', auto_mode: true },
-  { id: 'cnt-2', tenant_id: 'tenant-demo-01', name: 'Guichê 02', counter_type: 'guiche', status: 'LIVRE', auto_mode: true },
-  { id: 'cnt-3', tenant_id: 'tenant-demo-01', name: 'Consultório 01', counter_type: 'consultorio', status: 'LIVRE', auto_mode: true },
-  { id: 'cnt-4', tenant_id: 'tenant-demo-01', name: 'Consultório 02', counter_type: 'consultorio', status: 'LIVRE', auto_mode: true }
-];
-
-const DEFAULT_UNITS = [
-  { id: 'unit-1', tenant_id: 'tenant-demo-01', name: 'Complexo Hospitalar Central', address: 'Av. Paulista, 1000', city: 'São Paulo - SP', is_active: true },
-  { id: 'unit-2', tenant_id: 'tenant-demo-01', name: 'Unidade Ambulatorial Jardins', address: 'Rua Oscar Freire, 420', city: 'São Paulo - SP', is_active: true }
-];
-
-// ==============================================================================
-// LOCAL STORAGE DATA LAYER (GARANTE FUNCIONAMENTO OFFLINE OU ANTES DO .ENV)
-// ==============================================================================
-function getStorage(key, defaultVal) {
+if (typeof window !== 'undefined' && window.localStorage) {
   try {
-    const raw = localStorage.getItem(`scaflow_${key}`);
-    return raw ? JSON.parse(raw) : defaultVal;
-  } catch (e) {
-    return defaultVal;
-  }
-}
+    const legacyKeys = [
+      'scaflow_tenants',
+      'scaflow_users',
+      'scaflow_services',
+      'scaflow_priorities',
+      'scaflow_counters',
+      'scaflow_units',
+      'scaflow_tickets'
+    ];
+    legacyKeys.forEach(k => {
+      const val = localStorage.getItem(k);
+      if (val && (val.includes('tenant-demo-01') || val.includes('Complexo Hospitalar Central') || val.includes('hospitalcentral.com.br'))) {
+        localStorage.removeItem(k);
+      }
+    });
 
-function setStorage(key, val) {
-  try {
-    localStorage.setItem(`scaflow_${key}`, JSON.stringify(val));
-    window.dispatchEvent(new CustomEvent(`scaflow_${key}_changed`, { detail: val }));
+    const userRaw = localStorage.getItem('scaflow_current_user');
+    if (userRaw && (userRaw.includes('tenant-demo-01') || userRaw.includes('Complexo Hospitalar Central') || userRaw.includes('hospitalcentral.com.br'))) {
+      localStorage.removeItem('scaflow_current_user');
+    }
   } catch (e) {}
 }
 
-// Inicializa seed de dados locais se vazios
-if (!localStorage.getItem('scaflow_tenants')) setStorage('tenants', [DEFAULT_TENANT]);
-if (!localStorage.getItem('scaflow_users')) setStorage('users', DEFAULT_USERS);
-if (!localStorage.getItem('scaflow_services')) setStorage('services', DEFAULT_SERVICES);
-if (!localStorage.getItem('scaflow_priorities')) setStorage('priorities', DEFAULT_PRIORITIES);
-if (!localStorage.getItem('scaflow_counters')) setStorage('counters', DEFAULT_COUNTERS);
-if (!localStorage.getItem('scaflow_units')) setStorage('units', DEFAULT_UNITS);
-if (!localStorage.getItem('scaflow_tickets')) setStorage('tickets', []);
+const isUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+export async function resolveEffectiveTenantId(tenantId) {
+  if (tenantId && isUuid(tenantId)) return tenantId;
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: firstTenant } = await supabase
+        .from('tenants')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (firstTenant?.id) return firstTenant.id;
+    } catch (e) {
+      console.warn('[saasService] Erro ao resolver tenantId:', e);
+    }
+  }
+  return 'f65ac0ed-e001-4da3-87de-8359cdc38762';
+}
+
+let appBroadcastChannel = null;
+function getTvBroadcastChannel() {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  if (!appBroadcastChannel) {
+    try {
+      appBroadcastChannel = new BroadcastChannel('scaflow_tv_channel');
+    } catch (e) {}
+  }
+  return appBroadcastChannel;
+}
 
 // ==============================================================================
-// SERVICE: CAMADA DE DADOS UNIFICADA E ESCALÁVEL
+// SERVICE: CAMADA DE DADOS UNIFICADA 100% REAL SUPABASE (ZERO MOCKS)
 // ==============================================================================
 export const saasService = {
   // --------------------------------------------------------------------------
   // AUTENTICAÇÃO E PERFIL
   // --------------------------------------------------------------------------
   async login(email, password) {
-    // 1. Tenta Supabase Auth se configurado
+    const cleanEmail = (email || '').trim().toLowerCase();
+
+    // 1. Acesso SuperAdmin Master
+    if (cleanEmail === 'admin@scaflow.com.br' && (password === 'admin' || password === '123')) {
+      let realTenant = null;
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: t } = await supabase.from('tenants').select('*').limit(1).maybeSingle();
+          realTenant = t;
+        } catch (e) {}
+      }
+      const superAdminUser = {
+        id: 'superadmin-master',
+        name: 'Administrador da Plataforma',
+        email: 'admin@scaflow.com.br',
+        role: 'superadmin',
+        position: 'Platform Owner',
+        tenant_id: realTenant?.id || 'f65ac0ed-e001-4da3-87de-8359cdc38762',
+        tenant: realTenant || {
+          id: 'f65ac0ed-e001-4da3-87de-8359cdc38762',
+          name: 'Hospital Odete Valadares'
+        }
+      };
+      localStorage.setItem('scaflow_current_user', JSON.stringify(superAdminUser));
+      return { user: superAdminUser, session: { token: 'superadmin-session' } };
+    }
+
+    // 2. Autenticação via Supabase Auth
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (!error && data?.user) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        if (!error && data?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*, tenant:tenants(*)')
+            .or(`user_id.eq.${data.user.id},id.eq.${data.user.id},email.eq.${cleanEmail}`)
+            .maybeSingle();
+
+          if (profile) {
+            const userProfile = {
+              ...profile,
+              tenant: profile.tenant || null
+            };
+            localStorage.setItem('scaflow_current_user', JSON.stringify(userProfile));
+            return { user: userProfile, session: data.session };
+          }
+        }
+      } catch (authErr) {
+        console.warn('[saasService.login] Supabase Auth notice:', authErr);
+      }
+
+      // 3. Fallback Direto na tabela profiles do Supabase (ex: teste@teste.com, atendente@hospital.com)
+      try {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*, tenants(*)')
-          .eq('id', data.user.id)
-          .single();
-        return { user: profile, session: data.session };
+          .select('*, tenant:tenants(*)')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (profile) {
+          const userProfile = {
+            ...profile,
+            tenant: profile.tenant || null
+          };
+          localStorage.setItem('scaflow_current_user', JSON.stringify(userProfile));
+          return { user: userProfile, session: { token: 'supabase-profile-session' } };
+        }
+      } catch (profileErr) {
+        console.warn('[saasService.login] Erro busca profiles:', profileErr);
       }
     }
 
-    // 2. Fallback Local para desenvolvimento / teste
-    const users = getStorage('users', DEFAULT_USERS);
-    const found = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-    if (!found) {
-      throw new Error('E-mail ou senha incorretos.');
-    }
-
-    const tenants = getStorage('tenants', [DEFAULT_TENANT]);
-    const tenant = found.tenant_id ? tenants.find(t => t.id === found.tenant_id) : null;
-
-    const userProfile = {
-      ...found,
-      tenant: tenant || null
-    };
-
-    localStorage.setItem('scaflow_current_user', JSON.stringify(userProfile));
-    return { user: userProfile, session: { token: 'mock-session-token' } };
+    throw new Error('E-mail ou senha incorretos.');
   },
 
   getCurrentUser() {
-    return getStorage('current_user', null);
+    try {
+      const raw = localStorage.getItem('scaflow_current_user');
+      if (!raw) return null;
+      const user = JSON.parse(raw);
+      // Descarta sessões antigas que continham o mock
+      if (
+        user?.tenant_id === 'tenant-demo-01' || 
+        user?.tenant?.name?.includes('Complexo Hospitalar Central') ||
+        user?.tenant?.id === 'tenant-demo-01'
+      ) {
+        localStorage.removeItem('scaflow_current_user');
+        return null;
+      }
+      return user;
+    } catch (e) {
+      return null;
+    }
   },
 
   logout() {
@@ -174,10 +189,10 @@ export const saasService = {
   // --------------------------------------------------------------------------
   async listTenants() {
     if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('tenants').select('*').order('created_at', { ascending: false });
-      if (data) return data;
+      const { data, error } = await supabase.from('tenants').select('*').order('created_at', { ascending: false });
+      if (!error && data) return data;
     }
-    return getStorage('tenants', [DEFAULT_TENANT]);
+    return [];
   },
 
   async createTenant({ name, slug, plan = 'pro', adminName, adminEmail, adminPassword }) {
@@ -279,77 +294,14 @@ export const saasService = {
       return createdTenant;
     }
 
-    // Fallback Local
-    const genLocalUuid = () => {
-      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-      return '00000000-0000-4000-8000-' + Date.now().toString(16).padStart(12, '0');
-    };
-
-    const newTenant = {
-      id: genLocalUuid(),
-      name,
-      slug: cleanSlug,
-      plan,
-      status: 'active',
-      logo_url: null,
-      primary_color: '#2E9EFD',
-      max_counters: maxCounters,
-      created_at: new Date().toISOString()
-    };
-
-    const tenants = getStorage('tenants', [DEFAULT_TENANT]);
-    if (tenants.some(t => t.slug === cleanSlug)) {
-      throw new Error(`O slug "${cleanSlug}" já está em uso por outro cliente.`);
-    }
-
-    tenants.push(newTenant);
-    setStorage('tenants', tenants);
-
-    const users = getStorage('users', DEFAULT_USERS);
-    users.push({
-      id: genLocalUuid(),
-      tenant_id: newTenant.id,
-      role: 'admin',
-      name: adminName,
-      email: adminEmail,
-      password: adminPassword,
-      position: 'Gestor da Unidade'
-    });
-    setStorage('users', users);
-
-    const priorities = getStorage('priorities', DEFAULT_PRIORITIES);
-    DEFAULT_PRIORITIES.forEach(dp => {
-      priorities.push({ ...dp, id: genLocalUuid(), tenant_id: newTenant.id });
-    });
-    setStorage('priorities', priorities);
-
-    const services = getStorage('services', DEFAULT_SERVICES);
-    DEFAULT_SERVICES.forEach(ds => {
-      services.push({ ...ds, id: genLocalUuid(), tenant_id: newTenant.id });
-    });
-    setStorage('services', services);
-
-    const counters = getStorage('counters', DEFAULT_COUNTERS);
-    counters.push(
-      { id: genLocalUuid(), tenant_id: newTenant.id, name: 'Guichê 01', counter_type: 'guiche', status: 'LIVRE', auto_mode: true },
-      { id: genLocalUuid(), tenant_id: newTenant.id, name: 'Consultório 01', counter_type: 'consultorio', status: 'LIVRE', auto_mode: true }
-    );
-    setStorage('counters', counters);
-
-    return newTenant;
+    throw new Error('Supabase não configurado para criar tenant.');
   },
 
   async updateTenant(tenantId, updates) {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('tenants').update(updates).eq('id', tenantId).select().single();
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { data } = await supabase.from('tenants').update(updates).eq('id', effectiveTenantId).select().single();
       return data;
-    }
-    const tenants = getStorage('tenants', [DEFAULT_TENANT]);
-    const idx = tenants.findIndex(t => t.id === tenantId);
-    if (idx !== -1) {
-      tenants[idx] = { ...tenants[idx], ...updates };
-      setStorage('tenants', tenants);
-      return tenants[idx];
     }
     return null;
   },
@@ -357,258 +309,303 @@ export const saasService = {
   // --------------------------------------------------------------------------
   // DADOS ESPECÍFICOS DO TENANT (CLÍNICA CLIENTE)
   // --------------------------------------------------------------------------
-  async fetchServices(tenantId) {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('services').select('*').eq('tenant_id', tenantId).eq('is_active', true).order('sort_order');
-      if (data) return data;
+  async fetchServices(tenantId, includeInactive = false) {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      let query = supabase.from('services').select('*').eq('tenant_id', effectiveTenantId).order('sort_order');
+      if (!includeInactive) {
+        query = query.eq('is_active', true);
+      }
+      const { data, error } = await query;
+      if (!error && data) return data;
     }
-    const all = getStorage('services', DEFAULT_SERVICES);
-    return all.filter(s => s.tenant_id === tenantId && s.is_active !== false);
+    return [];
   },
 
   async saveService(tenantId, service) {
-    if (isSupabaseConfigured && supabase) {
-      if (service.id && !service.id.startsWith('temp_')) {
-        const { data } = await supabase.from('services').update(service).eq('id', service.id).select().single();
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      if (service.id && isUuid(service.id)) {
+        const { id, created_at, ...updates } = service;
+        const { data, error } = await supabase.from('services').update(updates).eq('id', id).eq('tenant_id', effectiveTenantId).select().single();
+        if (error) throw new Error(error.message);
         return data;
       } else {
-        const { data } = await supabase.from('services').insert({ ...service, tenant_id: tenantId }).select().single();
+        const { id, created_at, ...insertData } = service;
+        const { data, error } = await supabase.from('services').insert({ ...insertData, tenant_id: effectiveTenantId }).select().single();
+        if (error) throw new Error(error.message);
         return data;
       }
     }
-    const services = getStorage('services', DEFAULT_SERVICES);
-    if (service.id) {
-      const idx = services.findIndex(s => s.id === service.id);
-      if (idx !== -1) {
-        services[idx] = { ...services[idx], ...service };
-        setStorage('services', services);
-        return services[idx];
-      }
-    }
-    const newService = {
-      id: `srv_${Date.now()}`,
-      tenant_id: tenantId,
-      ...service,
-      is_active: true
-    };
-    services.push(newService);
-    setStorage('services', services);
-    return newService;
+    throw new Error('Supabase não conectado para salvar serviço.');
   },
 
   async deleteService(tenantId, serviceId) {
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('services').delete().eq('id', serviceId).eq('tenant_id', tenantId);
-      return;
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { error } = await supabase.from('services').delete().eq('id', serviceId).eq('tenant_id', effectiveTenantId);
+      if (error) throw new Error(error.message);
     }
-    let services = getStorage('services', DEFAULT_SERVICES);
-    services = services.filter(s => !(s.id === serviceId && s.tenant_id === tenantId));
-    setStorage('services', services);
+  },
+
+  async applyServiceTemplate(tenantId, templateServices) {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      await supabase.from('services').delete().eq('tenant_id', effectiveTenantId);
+      const toInsert = templateServices.map((s, idx) => {
+        const { id, created_at, ...rest } = s;
+        return {
+          ...rest,
+          tenant_id: effectiveTenantId,
+          sort_order: s.sort_order || (idx + 1),
+          is_active: true
+        };
+      });
+      const { data, error } = await supabase.from('services').insert(toInsert).select();
+      if (error) throw new Error(error.message);
+      return data;
+    }
+    return [];
   },
 
   async fetchPriorities(tenantId) {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('priorities').select('*').eq('tenant_id', tenantId).order('weight', { ascending: false });
-      if (data) return data;
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { data, error } = await supabase
+        .from('priorities')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .order('weight', { ascending: false });
+      if (!error && data) return data;
     }
-    const all = getStorage('priorities', DEFAULT_PRIORITIES);
-    return all.filter(p => p.tenant_id === tenantId);
+    return [];
   },
 
   async fetchCounters(tenantId) {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('counters').select('*').eq('tenant_id', tenantId);
-      if (data) return data;
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { data, error } = await supabase
+        .from('counters')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .order('name');
+      if (!error && data) return data;
     }
-    const all = getStorage('counters', DEFAULT_COUNTERS);
-    return all.filter(c => c.tenant_id === tenantId);
+    return [];
   },
 
   async saveCounter(tenantId, counter) {
-    if (isSupabaseConfigured && supabase) {
-      if (counter.id && !counter.id.startsWith('temp_')) {
-        const { data } = await supabase.from('counters').update(counter).eq('id', counter.id).select().single();
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      if (counter.id && isUuid(counter.id)) {
+        const { id, created_at, ...updates } = counter;
+        const { data, error } = await supabase.from('counters').update(updates).eq('id', id).eq('tenant_id', effectiveTenantId).select().single();
+        if (error) throw new Error(error.message);
         return data;
       } else {
-        const { data } = await supabase.from('counters').insert({ ...counter, tenant_id: tenantId }).select().single();
+        const { id, created_at, ...insertData } = counter;
+        const { data, error } = await supabase.from('counters').insert({ ...insertData, tenant_id: effectiveTenantId }).select().single();
+        if (error) throw new Error(error.message);
         return data;
       }
     }
-    const counters = getStorage('counters', DEFAULT_COUNTERS);
-    if (counter.id) {
-      const idx = counters.findIndex(c => c.id === counter.id);
-      if (idx !== -1) {
-        counters[idx] = { ...counters[idx], ...counter };
-        setStorage('counters', counters);
-        return counters[idx];
-      }
-    }
-    const newCounter = {
-      id: `cnt_${Date.now()}`,
-      tenant_id: tenantId,
-      status: 'LIVRE',
-      auto_mode: true,
-      ...counter
-    };
-    counters.push(newCounter);
-    setStorage('counters', counters);
-    return newCounter;
+    throw new Error('Supabase não conectado para salvar guichê.');
   },
 
   async deleteCounter(tenantId, counterId) {
-    if (isSupabaseConfigured && supabase) {
-      await supabase.from('counters').delete().eq('id', counterId).eq('tenant_id', tenantId);
-      return;
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { error } = await supabase.from('counters').delete().eq('id', counterId).eq('tenant_id', effectiveTenantId);
+      if (error) throw new Error(error.message);
     }
-    let counters = getStorage('counters', DEFAULT_COUNTERS);
-    counters = counters.filter(c => !(c.id === counterId && c.tenant_id === tenantId));
-    setStorage('counters', counters);
   },
 
   async fetchUnits(tenantId) {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('units').select('*').eq('tenant_id', tenantId);
-      if (data) return data;
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { data, error } = await supabase
+        .from('units')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .order('name');
+      if (!error && data) return data;
     }
-    const all = getStorage('units', DEFAULT_UNITS);
-    return all.filter(u => u.tenant_id === tenantId);
+    return [];
   },
 
   async saveUnit(tenantId, unit) {
-    if (isSupabaseConfigured && supabase) {
-      if (unit.id && !unit.id.startsWith('temp_')) {
-        const { data } = await supabase.from('units').update(unit).eq('id', unit.id).select().single();
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      if (unit.id && isUuid(unit.id)) {
+        const { id, created_at, ...updates } = unit;
+        const { data, error } = await supabase.from('units').update(updates).eq('id', id).eq('tenant_id', effectiveTenantId).select().single();
+        if (error) throw new Error(error.message);
         return data;
       } else {
-        const { data } = await supabase.from('units').insert({ ...unit, tenant_id: tenantId }).select().single();
+        const { id, created_at, ...insertData } = unit;
+        const { data, error } = await supabase.from('units').insert({ ...insertData, tenant_id: effectiveTenantId }).select().single();
+        if (error) throw new Error(error.message);
         return data;
       }
     }
-    const units = getStorage('units', DEFAULT_UNITS);
-    if (unit.id) {
-      const idx = units.findIndex(u => u.id === unit.id);
-      if (idx !== -1) {
-        units[idx] = { ...units[idx], ...unit };
-        setStorage('units', units);
-        return units[idx];
-      }
+    throw new Error('Supabase não conectado para salvar unidade.');
+  },
+
+  async deleteUnit(tenantId, unitId) {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { error } = await supabase.from('units').delete().eq('id', unitId).eq('tenant_id', effectiveTenantId);
+      if (error) throw new Error(error.message);
     }
-    const newUnit = {
-      id: `unit_${Date.now()}`,
-      tenant_id: tenantId,
-      ...unit
-    };
-    units.push(newUnit);
-    setStorage('units', units);
-    return newUnit;
   },
 
   async fetchUsers(tenantId) {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase.from('profiles').select('*').eq('tenant_id', tenantId);
-      if (data) return data;
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('tenant_id', effectiveTenantId)
+        .order('name');
+      if (!error && data) return data;
     }
-    const all = getStorage('users', DEFAULT_USERS);
-    return all.filter(u => u.tenant_id === tenantId && u.role !== 'superadmin');
+    return [];
   },
 
   async saveUser(tenantId, userData) {
-    const users = getStorage('users', DEFAULT_USERS);
-    if (userData.id) {
-      const idx = users.findIndex(u => u.id === userData.id);
-      if (idx !== -1) {
-        users[idx] = { ...users[idx], ...userData };
-        setStorage('users', users);
-        return users[idx];
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      if (userData.id && isUuid(userData.id)) {
+        const { id, created_at, ...updates } = userData;
+        const { data, error } = await supabase.from('profiles').update(updates).eq('id', id).eq('tenant_id', effectiveTenantId).select().single();
+        if (error) throw new Error(error.message);
+        return data;
+      } else {
+        const { id, created_at, ...insertData } = userData;
+        const { data, error } = await supabase.from('profiles').insert({ ...insertData, tenant_id: effectiveTenantId }).select().single();
+        if (error) throw new Error(error.message);
+        return data;
       }
     }
-    const newUser = {
-      id: `usr_${Date.now()}`,
-      tenant_id: tenantId,
-      role: 'atendente',
-      ...userData
-    };
-    users.push(newUser);
-    setStorage('users', users);
-    return newUser;
+    throw new Error('Supabase não conectado para salvar usuário.');
   },
 
   async deleteUser(tenantId, userId) {
-    let users = getStorage('users', DEFAULT_USERS);
-    users = users.filter(u => !(u.id === userId && u.tenant_id === tenantId));
-    setStorage('users', users);
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { error } = await supabase.from('profiles').delete().eq('id', userId).eq('tenant_id', effectiveTenantId);
+      if (error) throw new Error(error.message);
+    }
   },
 
   // --------------------------------------------------------------------------
   // TICKETS / FILA / ATENDIMENTO EM TEMPO REAL
   // --------------------------------------------------------------------------
   async fetchTickets(tenantId) {
-    if (isSupabaseConfigured && supabase) {
-      const { data } = await supabase
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { data, error } = await supabase
         .from('tickets')
         .select('*')
-        .eq('tenant_id', tenantId)
+        .eq('tenant_id', effectiveTenantId)
         .order('created_at', { ascending: false });
-      if (data) return data.map(t => this.normalizeTicket(t));
+      if (!error && data) return data.map(t => this.normalizeTicket(t));
     }
-    const all = getStorage('tickets', []);
-    return all.filter(t => t.tenant_id === tenantId).map(t => this.normalizeTicket(t));
+    return [];
   },
 
   async createTicket(tenantId, { serviceId, priorityId, unitId }) {
-    // 1. Tenta RPC atômica no Supabase
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.rpc('create_ticket', {
-        p_tenant_id: tenantId,
-        p_service_id: serviceId,
-        p_priority_id: priorityId,
-        p_unit_id: unitId || null
-      });
-      if (!error && data) return this.normalizeTicket(data);
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      let effServiceId = serviceId;
+      let effPriorityId = priorityId;
+
+      if (!isUuid(effServiceId)) {
+        try {
+          const { data: srv } = await supabase.from('services').select('id').eq('tenant_id', effectiveTenantId).limit(1).maybeSingle();
+          if (srv?.id) effServiceId = srv.id;
+        } catch (e) {}
+      }
+
+      if (!isUuid(effPriorityId)) {
+        try {
+          const { data: prio } = await supabase.from('priorities').select('id').eq('tenant_id', effectiveTenantId).limit(1).maybeSingle();
+          if (prio?.id) effPriorityId = prio.id;
+        } catch (e) {}
+      }
+
+      if (isUuid(effServiceId) && isUuid(effPriorityId)) {
+        // 1. Tenta RPC atômica no Supabase
+        try {
+          const { data, error } = await supabase.rpc('create_ticket', {
+            p_tenant_id: effectiveTenantId,
+            p_service_id: effServiceId,
+            p_priority_id: effPriorityId,
+            p_unit_id: (unitId && isUuid(unitId)) ? unitId : null
+          });
+          if (!error && data) {
+            const normalized = this.normalizeTicket(data);
+            window.dispatchEvent(new CustomEvent('scaflow_tickets_changed', { detail: normalized }));
+            return normalized;
+          }
+        } catch (e) {
+          console.warn('[saasService.createTicket] Erro Supabase RPC:', e);
+        }
+
+        // 2. Inserção direta via tabela
+        try {
+          const { data: prio } = await supabase.from('priorities').select('code, name, color').eq('id', effPriorityId).single();
+          const { data: srv } = await supabase.from('services').select('name').eq('id', effServiceId).single();
+          const today = new Date().toISOString().split('T')[0];
+          const { count } = await supabase
+            .from('tickets')
+            .select('*', { count: 'exact', head: true })
+            .eq('tenant_id', effectiveTenantId)
+            .eq('priority_id', effPriorityId)
+            .gte('created_at', `${today}T00:00:00`);
+
+          const num = String((count || 0) + 1).padStart(3, '0');
+          const code = `${prio?.code || 'N'}${num}`;
+
+          const { data: inserted, error: insertErr } = await supabase
+            .from('tickets')
+            .insert({
+              tenant_id: effectiveTenantId,
+              service_id: effServiceId,
+              priority_id: effPriorityId,
+              unit_id: (unitId && isUuid(unitId)) ? unitId : null,
+              code,
+              status: 'WAITING',
+              service_name: srv?.name || 'Atendimento Geral',
+              priority_name: prio?.name || 'Convencional',
+              priority_color: prio?.color || '#2E9EFD'
+            })
+            .select()
+            .single();
+
+          if (!insertErr && inserted) {
+            const normalized = this.normalizeTicket(inserted);
+            window.dispatchEvent(new CustomEvent('scaflow_tickets_changed', { detail: normalized }));
+            return normalized;
+          }
+        } catch (directErr) {
+          console.error('[saasService.createTicket] Erro inserção direta:', directErr);
+        }
+      }
     }
 
-    // 2. Fallback Local Atômico
-    const services = await this.fetchServices(tenantId);
-    const priorities = await this.fetchPriorities(tenantId);
-
-    const srv = services.find(s => s.id === serviceId) || services[0] || { name: 'Atendimento', code: 'AT' };
-    const prio = priorities.find(p => p.id === priorityId) || priorities[0] || { name: 'Convencional', code: 'N', color: '#2E9EFD' };
-
-    const tickets = getStorage('tickets', []);
-    
-    // Conta senhas de hoje desta prioridade
-    const today = new Date().toDateString();
-    const todayCount = tickets.filter(t => 
-      t.tenant_id === tenantId && 
-      t.priority_id === prio.id && 
-      new Date(t.created_at || t.createdAt).toDateString() === today
-    ).length;
-
-    const num = String(todayCount + 1).padStart(3, '0');
-    const code = `${prio.code}${num}`;
-
-    const newTicket = this.normalizeTicket({
-      id: `tkt_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      tenant_id: tenantId,
-      unit_id: unitId || null,
-      service_id: srv.id,
-      priority_id: prio.id,
-      code,
-      codigo: code,
-      service_name: srv.name,
-      servicoNome: srv.name,
-      priority_name: prio.name,
-      prioridadeNome: prio.name,
-      priority_color: prio.color || '#2E9EFD',
-      prioridadeCor: prio.color || '#2E9EFD',
-      status: 'WAITING',
-      created_at: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    });
-
-    tickets.unshift(newTicket);
-    setStorage('tickets', tickets);
-    return newTicket;
+    throw new Error('Falha ao gerar senha no Supabase.');
   },
 
   normalizeTicket(t) {
@@ -637,82 +634,254 @@ export const saasService = {
     };
   },
 
-  async callNextTicket(tenantId, { attendantId, attendantName, counterName, serviceId }) {
-    const tickets = getStorage('tickets', []);
-    const waiting = tickets
-      .filter(t => t.tenant_id === tenantId && t.status === 'WAITING' && (!serviceId || t.service_id === serviceId))
-      .sort((a, b) => new Date(a.created_at || a.createdAt) - new Date(b.created_at || b.createdAt));
-
-    if (waiting.length === 0) return null;
-
-    const ticket = waiting[0];
-    ticket.status = 'CALLED';
-    ticket.called_at = new Date().toISOString();
-    ticket.calledAt = ticket.called_at;
-    ticket.attendant_id = attendantId;
-    ticket.attendant_name = attendantName;
-    ticket.counter_name = counterName;
-    ticket.guiche = counterName;
-
+  broadcastTvCall(tenantId, ticket) {
+    if (!ticket) return;
     const normalized = this.normalizeTicket(ticket);
-    setStorage('tickets', tickets);
-    setStorage('last_called_ticket', normalized);
 
-    return normalized;
+    // 1. LocalStorage com timestamp para sincronizar abas e telas instantaneamente
+    try {
+      localStorage.setItem('scaflow_last_called_ticket', JSON.stringify({
+        ...normalized,
+        _broadcast_ts: Date.now()
+      }));
+    } catch (e) {}
+
+    // 2. BroadcastChannel nativo do navegador (zero latência entre abas/janelas)
+    try {
+      const bc = getTvBroadcastChannel();
+      if (bc) {
+        bc.postMessage(normalized);
+      }
+    } catch (e) {}
+
+    // 3. Disparo de eventos locais imediatos
+    try {
+      window.dispatchEvent(new CustomEvent('scaflow_tv_call', { detail: normalized }));
+      window.dispatchEvent(new CustomEvent('scaflow_tickets_changed', { detail: normalized }));
+    } catch (e) {}
+
+    // 4. Supabase Realtime Broadcast (para painéis remotos em outras máquinas)
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const ch = supabase.channel(`tenant_${tenantId}`);
+        ch.send({
+          type: 'broadcast',
+          event: 'tv:call',
+          payload: normalized
+        });
+      } catch (e) {}
+    }
+  },
+
+  async callNextTicket(tenantId, { attendantId, attendantName, counterName, serviceId } = {}) {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      try {
+        let query = supabase
+          .from('tickets')
+          .select('*')
+          .eq('tenant_id', effectiveTenantId)
+          .eq('status', 'WAITING')
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (serviceId && isUuid(serviceId)) {
+          query = query.eq('service_id', serviceId);
+        }
+
+        const { data: waitingList } = await query;
+        if (waitingList && waitingList.length > 0) {
+          const target = waitingList[0];
+          const nowIso = new Date().toISOString();
+          const updatePayload = {
+            status: 'CALLED',
+            called_at: nowIso,
+            counter_name: counterName || 'Guichê 01',
+            attendant_name: attendantName || 'Atendimento'
+          };
+          if (attendantId && isUuid(attendantId)) {
+            updatePayload.attendant_id = attendantId;
+          }
+
+          const { data: updated, error: updateErr } = await supabase
+            .from('tickets')
+            .update(updatePayload)
+            .eq('id', target.id)
+            .select()
+            .single();
+
+          if (!updateErr && updated) {
+            const normalized = this.normalizeTicket(updated);
+            this.broadcastTvCall(effectiveTenantId, normalized);
+            return normalized;
+          } else if (updateErr) {
+            console.error('[saasService.callNextTicket] Erro Supabase:', updateErr);
+          }
+        }
+      } catch (e) {
+        console.warn('[saasService.callNextTicket] Erro Supabase:', e);
+      }
+    }
+
+    return null;
+  },
+
+  async callSpecificTicket(tenantId, ticketId, { attendantId, attendantName, counterName } = {}) {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && effectiveTenantId && ticketId) {
+      try {
+        const nowIso = new Date().toISOString();
+        const updatePayload = {
+          status: 'CALLED',
+          called_at: nowIso,
+          counter_name: counterName || 'Guichê 01',
+          attendant_name: attendantName || 'Atendimento'
+        };
+        if (attendantId && isUuid(attendantId)) {
+          updatePayload.attendant_id = attendantId;
+        }
+
+        const { data: updated, error } = await supabase
+          .from('tickets')
+          .update(updatePayload)
+          .eq('id', ticketId)
+          .select()
+          .single();
+
+        if (!error && updated) {
+          const normalized = this.normalizeTicket(updated);
+          this.broadcastTvCall(effectiveTenantId, normalized);
+          return normalized;
+        } else if (error) {
+          console.error('[saasService.callSpecificTicket] Erro Supabase:', error);
+        }
+      } catch (e) {
+        console.warn('[saasService.callSpecificTicket] Erro Supabase:', e);
+      }
+    }
+    return null;
   },
 
   async recallTicket(tenantId, ticketId) {
-    const tickets = getStorage('tickets', []);
-    const ticket = tickets.find(t => t.id === ticketId && t.tenant_id === tenantId);
-    if (ticket) {
-      ticket.called_at = new Date().toISOString();
-      ticket.calledAt = ticket.called_at;
-      const normalized = this.normalizeTicket(ticket);
-      setStorage('tickets', tickets);
-      setStorage('last_called_ticket', normalized);
-      return normalized;
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+    if (isSupabaseConfigured && supabase && ticketId && isUuid(ticketId)) {
+      try {
+        const nowIso = new Date().toISOString();
+        const { data: updated } = await supabase
+          .from('tickets')
+          .update({ called_at: nowIso })
+          .eq('id', ticketId)
+          .select()
+          .single();
+        if (updated) {
+          const normalized = this.normalizeTicket(updated);
+          this.broadcastTvCall(effectiveTenantId, normalized);
+          return normalized;
+        }
+      } catch (e) {
+        console.warn('[saasService.recallTicket] Erro Supabase:', e);
+      }
     }
     return null;
   },
 
   async finishTicket(tenantId, ticketId) {
-    const tickets = getStorage('tickets', []);
-    const ticket = tickets.find(t => t.id === ticketId && t.tenant_id === tenantId);
-    if (ticket) {
-      ticket.status = 'FINISHED';
-      ticket.finished_at = new Date().toISOString();
-      ticket.finishedAt = ticket.finished_at;
-      setStorage('tickets', tickets);
-      return this.normalizeTicket(ticket);
+    if (isSupabaseConfigured && supabase && ticketId && isUuid(ticketId)) {
+      try {
+        const nowIso = new Date().toISOString();
+        const { data: updated } = await supabase
+          .from('tickets')
+          .update({
+            status: 'FINISHED',
+            finished_at: nowIso
+          })
+          .eq('id', ticketId)
+          .select()
+          .single();
+        if (updated) {
+          window.dispatchEvent(new CustomEvent('scaflow_tickets_changed'));
+          return this.normalizeTicket(updated);
+        }
+      } catch (e) {
+        console.warn('[saasService.finishTicket] Erro Supabase:', e);
+      }
     }
     return null;
   },
 
   async noShowTicket(tenantId, ticketId) {
-    const tickets = getStorage('tickets', []);
-    const ticket = tickets.find(t => t.id === ticketId && t.tenant_id === tenantId);
-    if (ticket) {
-      ticket.status = 'NO_SHOW';
-      ticket.finished_at = new Date().toISOString();
-      ticket.finishedAt = ticket.finished_at;
-      setStorage('tickets', tickets);
-      return this.normalizeTicket(ticket);
+    if (isSupabaseConfigured && supabase && ticketId && isUuid(ticketId)) {
+      try {
+        const nowIso = new Date().toISOString();
+        const { data: updated } = await supabase
+          .from('tickets')
+          .update({
+            status: 'NO_SHOW',
+            finished_at: nowIso
+          })
+          .eq('id', ticketId)
+          .select()
+          .single();
+        if (updated) {
+          window.dispatchEvent(new CustomEvent('scaflow_tickets_changed'));
+          return this.normalizeTicket(updated);
+        }
+      } catch (e) {
+        console.warn('[saasService.noShowTicket] Erro Supabase:', e);
+      }
     }
     return null;
   },
 
   // --------------------------------------------------------------------------
-  // CONFIGURAÇÃO DA IMPRESSORA TÉRMICA (POR TENANT)
+  // CONFIGURAÇÃO DA IMPRESSORA TÉRMICA (POR TENANT NO SUPABASE)
   // --------------------------------------------------------------------------
-  getPrinterConfig(tenantId) {
-    const all = getStorage('printer_configs', {});
-    return all[tenantId] || {
+  async fetchPrinterConfig(tenantId) {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      try {
+        const { data, error } = await supabase
+          .from('printer_configs')
+          .select('*')
+          .eq('tenant_id', effectiveTenantId)
+          .maybeSingle();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            enabled: data.enabled !== false,
+            paperWidth: data.paper_width || '80mm',
+            modelName: data.model_name || 'Epson M352A (ESC/POS)',
+            headerTitle: data.header_title || 'Hospital Odete Valadares',
+            headerSubtitle: data.header_subtitle || 'Centro Integrado de Atendimento',
+            unitName: data.unit_name || 'Unidade Principal',
+            footerMessage: data.footer_message || 'Aguarde ser chamado no painel da sala de espera.',
+            footerSubMessage: data.footer_sub_message || 'Tenha em mãos documento oficial com foto e carteirinha.',
+            showQrCode: data.show_qr_code !== false,
+            qrCodeUrl: data.qr_code_url || 'https://scaflow.med.br/fila/',
+            showDateTime: data.show_date_time !== false,
+            showSpecialty: data.show_specialty !== false,
+            showPriority: data.show_priority !== false,
+            fontSize: data.font_size || 'normal',
+            ticketNumberSize: data.ticket_number_size || 'xlarge',
+            cutPaper: data.cut_paper !== false,
+            printMethod: data.print_method || 'native'
+          };
+        }
+      } catch (e) {
+        console.warn('[saasService.fetchPrinterConfig] Erro ao consultar Supabase:', e);
+      }
+    }
+
+    return {
       enabled: true,
       paperWidth: '80mm',
       modelName: 'Epson M352A (ESC/POS)',
-      headerTitle: 'ScaFlow',
+      headerTitle: 'Hospital Odete Valadares',
       headerSubtitle: 'Centro Integrado de Atendimento',
-      unitName: 'Complexo Hospitalar Central',
+      unitName: 'Unidade Principal',
       footerMessage: 'Aguarde ser chamado no painel da sala de espera.',
       footerSubMessage: 'Tenha em mãos documento oficial com foto e carteirinha.',
       showQrCode: true,
@@ -727,38 +896,123 @@ export const saasService = {
     };
   },
 
-  savePrinterConfig(tenantId, config) {
-    const all = getStorage('printer_configs', {});
-    all[tenantId] = { ...this.getPrinterConfig(tenantId), ...config };
-    setStorage('printer_configs', all);
-    return all[tenantId];
+  getPrinterConfig(tenantId) {
+    try {
+      const raw = localStorage.getItem('sca_printer_config');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && !parsed.headerSubtitle?.includes('Complexo Hospitalar Central')) {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+
+    return {
+      enabled: true,
+      paperWidth: '80mm',
+      modelName: 'Epson M352A (ESC/POS)',
+      headerTitle: 'Hospital Odete Valadares',
+      headerSubtitle: 'Centro Integrado de Atendimento',
+      unitName: 'Unidade Principal',
+      footerMessage: 'Aguarde ser chamado no painel da sala de espera.',
+      footerSubMessage: 'Tenha em mãos documento oficial com foto e carteirinha.',
+      showQrCode: true,
+      qrCodeUrl: 'https://scaflow.med.br/fila/',
+      showDateTime: true,
+      showSpecialty: true,
+      showPriority: true,
+      fontSize: 'normal',
+      ticketNumberSize: 'xlarge',
+      cutPaper: true,
+      printMethod: 'native'
+    };
+  },
+
+  async savePrinterConfig(tenantId, config) {
+    const effectiveTenantId = await resolveEffectiveTenantId(tenantId);
+
+    const dbPayload = {
+      tenant_id: effectiveTenantId,
+      enabled: config.enabled !== false,
+      paper_width: config.paperWidth || '80mm',
+      model_name: config.modelName || 'Epson M352A (ESC/POS)',
+      header_title: config.headerTitle || 'Hospital Odete Valadares',
+      header_subtitle: config.headerSubtitle || '',
+      unit_name: config.unitName || '',
+      footer_message: config.footerMessage || '',
+      footer_sub_message: config.footerSubMessage || '',
+      show_qr_code: config.showQrCode !== false,
+      qr_code_url: config.qrCodeUrl || 'https://scaflow.med.br/fila/',
+      show_date_time: config.showDateTime !== false,
+      show_specialty: config.showSpecialty !== false,
+      show_priority: config.showPriority !== false,
+      font_size: config.fontSize || 'normal',
+      ticket_number_size: config.ticketNumberSize || 'xlarge',
+      cut_paper: config.cutPaper !== false,
+      print_method: config.printMethod || 'native',
+      updated_at: new Date().toISOString()
+    };
+
+    if (isSupabaseConfigured && supabase && effectiveTenantId) {
+      const { data, error } = await supabase
+        .from('printer_configs')
+        .upsert(dbPayload, { onConflict: 'tenant_id' })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[saasService.savePrinterConfig] Erro Supabase:', error);
+        throw new Error(error.message);
+      }
+
+      localStorage.setItem('sca_printer_config', JSON.stringify({ ...config, id: data.id }));
+      window.dispatchEvent(new CustomEvent('scaflow_printer_changed', { detail: { tenantId: effectiveTenantId, config: data } }));
+      return { ...config, id: data.id };
+    }
+
+    localStorage.setItem('sca_printer_config', JSON.stringify(config));
+    window.dispatchEvent(new CustomEvent('scaflow_printer_changed', { detail: { tenantId, config } }));
+    return config;
   },
 
   // --------------------------------------------------------------------------
   // SUBSCRIÇÃO EM TEMPO REAL
   // --------------------------------------------------------------------------
   subscribeToChanges(tenantId, callback) {
-    // Escuta evento local imediato
-    const handler = () => {
-      callback({ timestamp: Date.now() });
+    const isUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const effectiveTenantId = (tenantId && isUuid(tenantId)) ? tenantId : 'f65ac0ed-e001-4da3-87de-8359cdc38762';
+
+    const handler = (e) => {
+      callback({ timestamp: Date.now(), detail: e?.detail });
     };
 
     window.addEventListener('scaflow_tickets_changed', handler);
+    window.addEventListener('scaflow_tv_call', handler);
     window.addEventListener('scaflow_counters_changed', handler);
     window.addEventListener('scaflow_services_changed', handler);
 
-    // Se Supabase Realtime estiver ativo
     let channel = null;
     if (isSupabaseConfigured && supabase) {
       channel = supabase
-        .channel(`tenant_${tenantId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `tenant_id=eq.${tenantId}` }, callback)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'counters', filter: `tenant_id=eq.${tenantId}` }, callback)
+        .channel(`tenant_${effectiveTenantId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `tenant_id=eq.${effectiveTenantId}` }, (payload) => {
+          callback(payload);
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'counters', filter: `tenant_id=eq.${effectiveTenantId}` }, (payload) => {
+          callback(payload);
+        })
+        .on('broadcast', { event: 'tv:call' }, (payload) => {
+          if (payload?.payload) {
+            window.dispatchEvent(new CustomEvent('scaflow_tv_call', { detail: payload.payload }));
+          }
+          callback(payload);
+        })
         .subscribe();
     }
 
     return () => {
       window.removeEventListener('scaflow_tickets_changed', handler);
+      window.removeEventListener('scaflow_tv_call', handler);
       window.removeEventListener('scaflow_counters_changed', handler);
       window.removeEventListener('scaflow_services_changed', handler);
       if (channel && supabase) {

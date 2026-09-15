@@ -29,8 +29,12 @@ import { saasService } from '../supabase';
 
 export default function Atendente({ user, tenant }) {
   const currentUsername = user?.login || user?.email?.split('@')[0] || 'laura';
-  const currentDisplayName = user?.name || 'Laura Guimarães';
-  const tenantId = tenant?.id || user?.tenant_id || 'tenant-demo-01';
+  const REAL_TENANT_ID = 'f65ac0ed-e001-4da3-87de-8359cdc38762';
+  const tenantId = (tenant?.id && tenant.id !== 'tenant-demo-01') 
+    ? tenant.id 
+    : (user?.tenant_id && user.tenant_id !== 'tenant-demo-01') 
+      ? user.tenant_id 
+      : REAL_TENANT_ID;
 
   // Lista dinâmica de guichês ativos configurados na unidade
   const [activeGuiches, setActiveGuiches] = useState(() => {
@@ -328,25 +332,16 @@ export default function Atendente({ user, tenant }) {
   // 2. Chamar Senha Específica da Lista
   const handleCallSpecific = async (ticketId) => {
     try {
-      const tkts = await saasService.fetchTickets(tenantId);
-      const target = tkts.find(t => t.id === ticketId);
-      if (target) {
-        target.status = 'CALLED';
-        target.attendant_name = currentDisplayName;
-        target.counter_name = guiche;
-        const ticket = await saasService.callNextTicket(tenantId, {
-          attendantId: currentUsername,
-          attendantName: currentDisplayName,
-          counterName: guiche,
-          serviceId: target.service_id
-        }) || target;
+      const ticket = await saasService.callSpecificTicket(tenantId, ticketId, {
+        attendantId: currentUsername,
+        attendantName: currentDisplayName,
+        counterName: guiche
+      });
 
+      if (ticket) {
         setTicketAtual(ticket);
         setStatusAtendente('ATENDENDO');
         setShowFilaModal(false);
-        if (socket.connected) {
-          socket.emit('tv:call', ticket);
-        }
       }
     } catch (e) {
       console.error(e);

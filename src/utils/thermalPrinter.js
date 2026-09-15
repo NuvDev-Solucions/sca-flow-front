@@ -6,9 +6,9 @@ export const DEFAULT_PRINTER_CONFIG = {
   enabled: true,
   paperWidth: '80mm', // '80mm' (Epson M352A / TM-T20) ou '58mm' (POS-58)
   modelName: 'Epson M352A (ESC/POS)',
-  headerTitle: 'ScaFlow',
-  headerSubtitle: 'Centro Integrado de Atendimento',
-  unitName: 'Complexo Hospitalar Central',
+  headerTitle: 'Centro Integrado de Atendimento',
+  headerSubtitle: 'Hospital Odete Valadares',
+  unitName: 'Unidade Principal',
   footerMessage: 'Aguarde ser chamado no painel da sala de espera.',
   footerSubMessage: 'Tenha em mãos documento oficial com foto e carteirinha.',
   showQrCode: true,
@@ -40,6 +40,15 @@ export function buildTicketHtml(ticket, config = DEFAULT_PRINTER_CONFIG, qrCodeD
     ? (is58mm ? '2.6rem' : '3.4rem') 
     : (is58mm ? '3.0rem' : '4.2rem');
 
+  // Cabeçalho da clínica/instituição (sem forçar ScaFlow no topo)
+  const clinicTitle = (config.headerTitle && config.headerTitle.toLowerCase() !== 'scaflow')
+    ? config.headerTitle
+    : (config.headerSubtitle || 'Centro Integrado de Atendimento');
+
+  const clinicSubtitle = (config.headerTitle && config.headerTitle.toLowerCase() !== 'scaflow')
+    ? config.headerSubtitle
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -70,10 +79,10 @@ export function buildTicketHtml(ticket, config = DEFAULT_PRINTER_CONFIG, qrCodeD
       text-align: center;
     }
     .header-title {
-      font-size: ${is58mm ? '16px' : '20px'};
+      font-size: ${is58mm ? '15px' : '18px'};
       font-weight: 900;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
       margin-bottom: 2px;
     }
     .header-sub {
@@ -83,7 +92,7 @@ export function buildTicketHtml(ticket, config = DEFAULT_PRINTER_CONFIG, qrCodeD
       font-weight: 600;
     }
     .header-unit {
-      font-size: ${is58mm ? '10px' : '11px'};
+      font-size: ${is58mm ? '9px' : '11px'};
       font-style: italic;
       margin-bottom: 6px;
     }
@@ -164,6 +173,25 @@ export function buildTicketHtml(ticket, config = DEFAULT_PRINTER_CONFIG, qrCodeD
       margin-top: 4px;
       padding: 0 4px;
     }
+    .system-branding {
+      margin-top: 10px;
+      padding-top: 6px;
+      border-top: 1px dotted #888888;
+      text-align: center;
+      line-height: 1.35;
+    }
+    .branding-name {
+      font-size: ${is58mm ? '8.5px' : '9.5px'};
+      font-weight: 800;
+      color: #222222;
+      letter-spacing: 0.04em;
+    }
+    .branding-dev {
+      font-size: ${is58mm ? '7.5px' : '8.5px'};
+      color: #555555;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
     .cut-feed {
       height: ${config.cutPaper ? '6mm' : '3mm'};
       display: block;
@@ -172,8 +200,8 @@ export function buildTicketHtml(ticket, config = DEFAULT_PRINTER_CONFIG, qrCodeD
 </head>
 <body>
   <!-- CABEÇALHO DA INSTITUIÇÃO -->
-  <div class="header-title">${config.headerTitle || 'ScaFlow'}</div>
-  ${config.headerSubtitle ? `<div class="header-sub">${config.headerSubtitle}</div>` : ''}
+  <div class="header-title">${clinicTitle}</div>
+  ${clinicSubtitle ? `<div class="header-sub">${clinicSubtitle}</div>` : ''}
   ${config.unitName ? `<div class="header-unit">${config.unitName}</div>` : ''}
 
   <div class="divider"></div>
@@ -221,6 +249,12 @@ export function buildTicketHtml(ticket, config = DEFAULT_PRINTER_CONFIG, qrCodeD
   <!-- MENSAGEM DE RODAPÉ -->
   ${config.footerMessage ? `<div class="footer-msg">${config.footerMessage}</div>` : ''}
   ${config.footerSubMessage ? `<div class="footer-sub">${config.footerSubMessage}</div>` : ''}
+
+  <!-- MARCA D'ÁGUA / ASSINATURA DO SISTEMA (FIXA E INALTERÁVEL NO FINAL DO PAPEL) -->
+  <div class="system-branding">
+    <div class="branding-name">ScaFlow</div>
+    <div class="branding-dev">desenvolvido por nuvdev.com</div>
+  </div>
 
   <!-- ESPAÇO PARA O CORTE AUTOMÁTICO DE PAPEL DA EPSON -->
   <div class="cut-feed"></div>

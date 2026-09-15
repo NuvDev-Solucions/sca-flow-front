@@ -21,16 +21,26 @@ import {
 import QRCode from 'qrcode';
 import { socket } from '../socket';
 import { DEFAULT_PRINTER_CONFIG, printTestTicket } from '../utils/thermalPrinter';
+import { saasService } from '../supabase';
+import { useAuth } from '../context/AuthContext';
 
-export default function ThermalPrinterConfig() {
+export default function ThermalPrinterConfig({ tenantId: propTenantId, tenantName: propTenantName }) {
+  const { currentTenant } = useAuth();
+  const activeTenantId = propTenantId || currentTenant?.id || 'f65ac0ed-e001-4da3-87de-8359cdc38762';
+
   const [config, setConfig] = useState(() => {
     const saved = localStorage.getItem('sca_printer_config');
+    let base = { ...DEFAULT_PRINTER_CONFIG };
     if (saved) {
       try {
-        return { ...DEFAULT_PRINTER_CONFIG, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        base = { ...base, ...parsed };
       } catch (e) { }
     }
-    return DEFAULT_PRINTER_CONFIG;
+    if (base.headerTitle && base.headerTitle.toLowerCase() === 'scaflow') {
+      base.headerTitle = propTenantName || 'Centro Integrado de Atendimento';
+    }
+    return base;
   });
 
   const [previewQrUrl, setPreviewQrUrl] = useState('');
@@ -39,27 +49,45 @@ export default function ThermalPrinterConfig() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
-  // Carrega configuração do servidor e escuta atualizações
+  // Carrega configuração do Supabase e escuta atualizações
   useEffect(() => {
-    socket.emit('printer:config:get', {}, (res) => {
-      if (res && res.success && res.config) {
-        setConfig(prev => ({ ...prev, ...res.config }));
-        localStorage.setItem('sca_printer_config', JSON.stringify(res.config));
+    let mounted = true;
+
+    const loadConfig = async () => {
+      try {
+        const remote = await saasService.fetchPrinterConfig(activeTenantId);
+        if (mounted && remote) {
+          const loaded = { ...remote };
+          if (loaded.headerTitle && loaded.headerTitle.toLowerCase() === 'scaflow') {
+            loaded.headerTitle = propTenantName || 'Centro Integrado de Atendimento';
+          }
+          setConfig(prev => ({ ...prev, ...loaded }));
+          localStorage.setItem('sca_printer_config', JSON.stringify(loaded));
+        }
+      } catch (err) {
+        console.warn('[ThermalPrinterConfig] Falha ao carregar do Supabase:', err);
       }
-    });
+    };
+
+    loadConfig();
 
     const handleConfigUpdated = (updatedConfig) => {
-      if (updatedConfig) {
-        setConfig(prev => ({ ...prev, ...updatedConfig }));
-        localStorage.setItem('sca_printer_config', JSON.stringify(updatedConfig));
+      if (mounted && updatedConfig) {
+        const loaded = { ...updatedConfig };
+        if (loaded.headerTitle && loaded.headerTitle.toLowerCase() === 'scaflow') {
+          loaded.headerTitle = propTenantName || 'Centro Integrado de Atendimento';
+        }
+        setConfig(prev => ({ ...prev, ...loaded }));
+        localStorage.setItem('sca_printer_config', JSON.stringify(loaded));
       }
     };
 
     socket.on('printer:config:updated', handleConfigUpdated);
     return () => {
+      mounted = false;
       socket.off('printer:config:updated', handleConfigUpdated);
     };
-  }, []);
+  }, [activeTenantId, propTenantName]);
 
   // Atualiza QR Code da prévia em tempo real
   useEffect(() => {
@@ -84,19 +112,21 @@ export default function ThermalPrinterConfig() {
     setSaveSuccess(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setIsSaving(true);
-    socket.emit('printer:config:save', config, (res) => {
+    try {
+      const saved = await saasService.savePrinterConfig(activeTenantId, config);
+      try {
+        socket.emit('printer:config:save', saved || config);
+      } catch (e) { }
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 4000);
+    } catch (err) {
+      console.error('[ThermalPrinterConfig] Erro ao salvar no Supabase:', err);
+      alert(`Erro ao salvar no Supabase: ${err.message || 'Falha de comunicação com o banco de dados.'}`);
+    } finally {
       setIsSaving(false);
-      if (res && res.success) {
-        setSaveSuccess(true);
-        localStorage.setItem('sca_printer_config', JSON.stringify(res.config || config));
-        setTimeout(() => setSaveSuccess(false), 4000);
-      } else {
-        alert('Erro ao sincronizar com o servidor. A configuração foi salva localmente.');
-        localStorage.setItem('sca_printer_config', JSON.stringify(config));
-      }
-    });
+    }
   };
 
   const handleTestPrint = async () => {
@@ -215,13 +245,20 @@ export default function ThermalPrinterConfig() {
               color: '#ffffff',
               fontSize: '0.86rem',
               fontWeight: 800,
-              cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(46, 158, 253, 0.4)',
+              cursor: isSaving ? 'wait' : 'pointer',
+              opacity: isSaving ? 0.85 : 1,
+              boxShadow: saveSuccess ? '0 4px 16px rgba(16, 185, 129, 0.4)' : '0 4px 16px rgba(46, 158, 253, 0.4)',
               transition: 'all 0.2s'
             }}
           >
-            {saveSuccess ? <Check size={18} /> : <Save size={18} />}
-            <span>{isSaving ? 'Salvando...' : saveSuccess ? 'Configuração Salva!' : 'Salvar Alterações'}</span>
+            {saveSuccess ? (
+              <Check size={18} />
+            ) : isSaving ? (
+              <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} />
+            ) : (
+              <Save size={18} />
+            )}
+            <span>{isSaving ? 'Salvando...' : saveSuccess ? 'Salvo!' : 'Salvar Alterações'}</span>
           </button>
         </div>
       </div>
@@ -488,7 +525,7 @@ export default function ThermalPrinterConfig() {
                   type="text"
                   value={config.headerTitle}
                   onChange={(e) => handleChange('headerTitle', e.target.value)}
-                  placeholder="Ex: ScaFlow"
+                  placeholder="Ex: Centro Médico / Hospital Central"
                   style={{
                     width: '100%',
                     padding: '10px 14px',
@@ -530,7 +567,7 @@ export default function ThermalPrinterConfig() {
                   type="text"
                   value={config.unitName}
                   onChange={(e) => handleChange('unitName', e.target.value)}
-                  placeholder="Ex: Complexo Hospitalar Central"
+                  placeholder="Ex: Hospital Odete Valadares - Unidade Principal"
                   style={{
                     width: '100%',
                     padding: '10px 14px',
@@ -585,6 +622,31 @@ export default function ThermalPrinterConfig() {
                     resize: 'vertical'
                   }}
                 />
+              </div>
+
+              {/* Assinatura do Sistema (Fixa / Não apagável) */}
+              <div style={{
+                marginTop: '6px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                background: 'rgba(93, 94, 252, 0.08)',
+                border: '1px solid rgba(93, 94, 252, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#B5BCD7' }}>
+                    Assinatura do Sistema
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#5D5EFC', fontFamily: 'monospace', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <strong style={{ color: '#FDFCFD' }}>ScaFlow</strong>
+                    <span style={{ color: '#B5BCD7' }}>·</span>
+                    <span>desenvolvido por nuvdev.com</span>
+                  </div>
+                </div>
+ 
               </div>
 
             </div>
@@ -769,10 +831,12 @@ export default function ThermalPrinterConfig() {
                   letterSpacing: '0.04em',
                   marginBottom: '2px'
                 }}>
-                  {config.headerTitle || 'ScaFlow'}
+                  {(config.headerTitle && config.headerTitle.toLowerCase() !== 'scaflow')
+                    ? config.headerTitle
+                    : (config.headerSubtitle || 'Centro Integrado de Atendimento')}
                 </div>
 
-                {config.headerSubtitle && (
+                {config.headerSubtitle && config.headerTitle && config.headerTitle.toLowerCase() !== 'scaflow' && (
                   <div style={{ fontSize: is58mm ? '9px' : '11px', fontWeight: 600, color: '#333', marginBottom: '2px' }}>
                     {config.headerSubtitle}
                   </div>
@@ -872,6 +936,32 @@ export default function ThermalPrinterConfig() {
                     {config.footerSubMessage}
                   </div>
                 )}
+
+                {/* Marca d'água / Assinatura do Sistema (Fixa / Inalterável no finalzinho) */}
+                <div style={{
+                  marginTop: '10px',
+                  paddingTop: '6px',
+                  borderTop: '1px dotted #888',
+                  textAlign: 'center',
+                  lineHeight: '1.35'
+                }}>
+                  <div style={{
+                    fontSize: is58mm ? '8.5px' : '9.5px',
+                    fontWeight: 800,
+                    color: '#222',
+                    letterSpacing: '0.04em'
+                  }}>
+                    ScaFlow
+                  </div>
+                  <div style={{
+                    fontSize: is58mm ? '7.5px' : '8.5px',
+                    color: '#555',
+                    fontWeight: 500,
+                    letterSpacing: '0.02em'
+                  }}>
+                    desenvolvido por nuvdev.com
+                  </div>
+                </div>
 
                 {/* Serrilhado inferior de corte térmico */}
                 <div style={{

@@ -7,19 +7,46 @@ import {
   Clock, 
   Sparkles, 
   History,
-  Megaphone
+  Megaphone,
+  Building2
 } from 'lucide-react';
 import { socket, playChimeSound, speakTicket } from '../socket';
 import scaFlowLogo from '../assets/logo/ScaFlow.svg';
-import { saasService } from '../supabase';
+import { saasService, isSupabaseConfigured, supabase } from '../supabase';
 
-export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
+export default function PainelTV({ tenantId: propTenantId }) {
+  const isUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const tenantId = (propTenantId && isUuid(propTenantId)) ? propTenantId : 'f65ac0ed-e001-4da3-87de-8359cdc38762';
+  const [tenantInfo, setTenantInfo] = useState({
+    name: 'Hospital Odete Valadares',
+    unit: 'Unidade Principal'
+  });
   const [currentCall, setCurrentCall] = useState(null);
   const [callHistory, setCallHistory] = useState([]);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('pt-BR'));
   const [currentDate, setCurrentDate] = useState(new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
+
+  // Carrega informações da clínica/hospital do Supabase
+  useEffect(() => {
+    async function loadTenantHeader() {
+      if (isSupabaseConfigured && supabase && tenantId) {
+        try {
+          const { data: t } = await supabase.from('tenants').select('name').eq('id', tenantId).maybeSingle();
+          const { data: u } = await supabase.from('units').select('name').eq('tenant_id', tenantId).limit(1).maybeSingle();
+          if (t?.name) {
+            setTenantInfo({
+              name: t.name,
+              unit: u?.name || 'Unidade Principal'
+            });
+            document.title = `Painel TV · ${t.name}`;
+          }
+        } catch (e) {}
+      }
+    }
+    loadTenantHeader();
+  }, [tenantId]);
 
   // Relógio em tempo real
   useEffect(() => {
@@ -29,22 +56,25 @@ export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
     return () => clearInterval(timer);
   }, []);
 
-  // Escuta chamadas da TV (via SaaS e Socket Local)
+  // Escuta chamadas da TV (via SaaS, BroadcastChannel, Storage e Realtime)
   useEffect(() => {
     let isMounted = true;
-    let lastHandledId = null;
+    let lastHandledKey = null;
 
     const handleNewCall = (ticket) => {
       if (!ticket) return;
-      if (lastHandledId === `${ticket.id}_${ticket.calledAt || ticket.called_at}`) return;
-      lastHandledId = `${ticket.id}_${ticket.calledAt || ticket.called_at}`;
+      const key = `${ticket.id}_${ticket.calledAt || ticket.called_at || ticket._broadcast_ts || Date.now()}`;
+      if (lastHandledKey === key) return;
+      lastHandledKey = key;
 
       setCurrentCall(ticket);
       setCallHistory(prev => [ticket, ...prev.filter(t => t.id !== ticket.id)].slice(0, 6));
 
       // Animação de flash pulsante
       setIsFlashing(true);
-      setTimeout(() => setIsFlashing(false), 2800);
+      setTimeout(() => {
+        if (isMounted) setIsFlashing(false);
+      }, 2800);
 
       // Toca chime sonoro e fala no alto-falante
       playChimeSound();
@@ -53,14 +83,17 @@ export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
       }, 700);
     };
 
-    // 1. Carrega dados
+    // 1. Carrega dados do Supabase
     const loadSaaSData = async () => {
       try {
         const tkts = await saasService.fetchTickets(tenantId);
         if (isMounted && tkts) {
           const calledList = tkts.filter(t => t.status === 'CALLED' || t.status === 'FINISHED');
           if (calledList.length > 0) {
-            setCurrentCall(calledList[0]);
+            const latest = calledList[0];
+            if (!currentCall || currentCall.id !== latest.id || (latest.called_at && latest.called_at !== currentCall.called_at)) {
+              handleNewCall(latest);
+            }
             setCallHistory(calledList.slice(1, 7));
           }
         }
@@ -71,40 +104,66 @@ export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
 
     loadSaaSData();
 
-    // 2. Subscrição em tempo real no Supabase / Local Event
-    const unsub = saasService.subscribeToChanges(tenantId, () => {
+    // 2. BroadcastChannel nativo (sincronização instantânea entre abas sem atraso)
+    let bc = null;
+    if (typeof BroadcastChannel !== 'undefined') {
       try {
-        const rawLast = localStorage.getItem('scaflow_last_called_ticket');
-        if (rawLast) {
-          const t = JSON.parse(rawLast);
-          if (t && t.tenant_id === tenantId) {
-            handleNewCall(t);
+        bc = new BroadcastChannel('scaflow_tv_channel');
+        bc.onmessage = (event) => {
+          if (event.data && isMounted) {
+            handleNewCall(event.data);
           }
-        }
+        };
       } catch (e) {}
-    });
-
-    // 3. Fallback Socket Node.js
-    if (socket.connected) {
-      fetch('/api/dashboard')
-        .then(res => res.json())
-        .then(data => {
-          if (isMounted) {
-            if (data.lastCalled && !currentCall) setCurrentCall(data.lastCalled);
-            if (data.recentHistory && callHistory.length === 0) setCallHistory(data.recentHistory);
-          }
-        })
-        .catch(() => {});
     }
 
+    // 3. Escuta evento Storage do navegador (quando outra aba salva no localStorage)
+    const handleStorage = (e) => {
+      if (e.key === 'scaflow_last_called_ticket' && e.newValue) {
+        try {
+          const t = JSON.parse(e.newValue);
+          if (t && isMounted) {
+            handleNewCall(t);
+          }
+        } catch (err) {}
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+
+    // 4. Escuta evento na própria janela
+    const handleCustomCall = (e) => {
+      if (e.detail && isMounted) {
+        handleNewCall(e.detail);
+      }
+    };
+    window.addEventListener('scaflow_tv_call', handleCustomCall);
+
+    // 5. Subscrição Supabase Realtime
+    const unsub = saasService.subscribeToChanges(tenantId, () => {
+      if (isMounted) {
+        loadSaaSData();
+      }
+    });
+
+    // 6. Polling preventivo a cada 3 segundos (garante atualização constante mesmo entre dispositivos distintos)
+    const pollInterval = setInterval(() => {
+      if (isMounted) {
+        loadSaaSData();
+      }
+    }, 3000);
+
+    // 7. Fallback Socket Node.js
     const onTvCall = (ticket) => {
       handleNewCall(ticket);
     };
-
     socket.on('tv:call', onTvCall);
 
     return () => {
       isMounted = false;
+      if (bc) bc.close();
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('scaflow_tv_call', handleCustomCall);
+      clearInterval(pollInterval);
       unsub();
       socket.off('tv:call', onTvCall);
     };
@@ -126,19 +185,20 @@ export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
       overflow: 'hidden',
       position: 'relative'
     }}>
-      {/* Banner de Ativação de Áudio se o navegador tiver bloqueado */}
+      {/* Banner de Ativação de Áudio centralizado no topo (não cobre a hora nem a logo) */}
       {!soundEnabled && (
         <div
           onClick={enableAudio}
           className="pop-in"
           style={{
             position: 'fixed',
-            top: '20px',
-            right: '28px',
+            top: '18px',
+            left: '50%',
+            transform: 'translateX(-50%)',
             zIndex: 999,
             background: 'var(--gradient-symbol)',
             color: '#FDFCFD',
-            padding: '11px 22px',
+            padding: '10px 22px',
             borderRadius: '9999px',
             fontWeight: 800,
             fontSize: '0.88rem',
@@ -146,7 +206,8 @@ export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
             alignItems: 'center',
             gap: '8px',
             cursor: 'pointer',
-            boxShadow: '0 6px 22px rgba(46, 158, 253, 0.5)'
+            boxShadow: '0 6px 22px rgba(46, 158, 253, 0.5)',
+            whiteSpace: 'nowrap'
           }}
         >
           <Volume2 size={18} />
@@ -174,11 +235,12 @@ export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
             }} 
           />
           <div>
-            <div style={{ fontWeight: 800, fontSize: '1.25rem', letterSpacing: '-0.01em', color: '#FDFCFD' }}>
+            <div style={{ fontWeight: 900, fontSize: '1.4rem', letterSpacing: '-0.01em', color: '#FDFCFD' }}>
               Painel de Convocação
             </div>
-            <div style={{ fontSize: '0.86rem', color: '#B5BCD7' }}>
-              Sala de Espera · Atendimento Médico Especializado
+            <div style={{ fontSize: '0.92rem', color: '#2E9EFD', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+              <Building2 size={15} />
+              <span>{tenantInfo.name} · {tenantInfo.unit}</span>
             </div>
           </div>
         </div>
@@ -383,7 +445,9 @@ export default function PainelTV({ tenantId = 'tenant-demo-01' }) {
         <div>Por favor, dirija-se ao guichê indicado assim que sua senha for anunciada no alto-falante.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span className="pulse-dot"></span>
-          <span style={{ color: '#2E9EFD', fontWeight: 600 }}>ScaFlow · Conectado em Tempo Real</span>
+          <span style={{ color: '#2E9EFD', fontWeight: 700 }}>
+            Conectado em Tempo Real · {tenantInfo.name} ({tenantInfo.unit})
+          </span>
         </div>
       </footer>
     </div>

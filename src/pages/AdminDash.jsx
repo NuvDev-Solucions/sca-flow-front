@@ -72,8 +72,10 @@ import ThermalPrinterConfig from '../components/ThermalPrinterConfig';
 import { saasService } from '../supabase';
 
 export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPainel }) {
-  const tenantId = tenant?.id || 'tenant-demo-01';
-  const tenantName = tenant?.name || 'Complexo Hospitalar Central';
+  const REAL_TENANT_ID = 'f65ac0ed-e001-4da3-87de-8359cdc38762';
+  const REAL_TENANT_NAME = 'Hospital Odete Valadares';
+  const tenantId = (tenant?.id && tenant.id !== 'tenant-demo-01') ? tenant.id : REAL_TENANT_ID;
+  const tenantName = (tenant?.name && tenant.name !== 'Complexo Hospitalar Central') ? tenant.name : REAL_TENANT_NAME;
 
   // Menu Lateral Retrátil
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -125,7 +127,11 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
 
   // Dropdown de Unidades
   const [unidadeDropdownOpen, setUnidadeDropdownOpen] = useState(false);
-  const [selectedUnidade, setSelectedUnidade] = useState(tenantName);
+  const [selectedUnidade, setSelectedUnidade] = useState(() => (
+    tenantName.includes('Valadares') 
+      ? 'Hospital Odete Valadares - Unidade Principal' 
+      : tenantName
+  ));
 
   // Filtros Globais
   const [searchQuery, setSearchQuery] = useState('');
@@ -200,7 +206,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
   const [modalDeleteUnidadeOpen, setModalDeleteUnidadeOpen] = useState(false);
   const [unidadeToDelete, setUnidadeToDelete] = useState(null);
 
-  // Estados de Dados do Dashboard
+  // Estados de Dados do Dashboard (100% Dinâmicos e Reais do Banco)
   const [stats, setStats] = useState({
     kpis: {
       filaTotal: 0,
@@ -212,22 +218,37 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
       totalEmitidasHoje: 0
     },
     capacidade: {
-      activeAttendants: 2,
-      capacidadeHora: 14,
-      demandaHora: 8,
-      taxaOcupacao: 62,
+      activeAttendants: 0,
+      capacidadeHora: 0,
+      demandaHora: 0,
+      taxaOcupacao: 0,
       status: 'ADEQUADA',
-      mensagem: 'Fluxo estável. Consultórios operando dentro da margem de conforto.'
+      mensagem: 'Fluxo estável.'
     },
     filasSemVazao: [],
     servicosResumo: [],
     waitingQueue: [],
     attendants: [],
     recentHistory: [],
-    alertInfo: null
+    alertInfo: null,
+    slaCompliance: 100
   });
 
   const [services, setServices] = useState([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Modal de Criar / Editar Especialidade (Rota Especialidades)
+  const [modalServiceOpen, setModalServiceOpen] = useState(false);
+  const [editingService, setEditingService] = useState(null);
+  const [serviceFormData, setServiceFormData] = useState({
+    nome: '',
+    sigla: '',
+    descricao: '',
+    cor: '#2E9EFD'
+  });
+  const [serviceSaving, setServiceSaving] = useState(false);
+  const [serviceError, setServiceError] = useState('');
+
   const [nowTimestamp, setNowTimestamp] = useState(Date.now());
   const [soundAlertNotice, setSoundAlertNotice] = useState(false);
 
@@ -246,14 +267,15 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
 
     const calculateAnalytics = (tickets, srvs, cntrs) => {
       const today = new Date().toDateString();
-      const todayTickets = tickets.filter(t => new Date(t.created_at || t.createdAt).toDateString() === today);
+      const allTkts = tickets || [];
+      const todayTickets = allTkts.filter(t => new Date(t.created_at || t.createdAt).toDateString() === today);
       
-      const waiting = tickets.filter(t => t.status === 'WAITING');
+      const waiting = allTkts.filter(t => t.status === 'WAITING');
       const finished = todayTickets.filter(t => t.status === 'FINISHED');
-      const called = tickets.filter(t => t.status === 'CALLED');
+      const called = allTkts.filter(t => t.status === 'CALLED');
       const noShow = todayTickets.filter(t => t.status === 'NO_SHOW');
 
-      // TME: Espera média em segundos
+      // TME: Espera média real em segundos (tempo da emissão até ser chamado)
       let totalWaitSec = 0;
       let countWait = 0;
       todayTickets.forEach(t => {
@@ -263,47 +285,108 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
           countWait++;
         }
       });
-      const tmeSegundos = countWait > 0 ? Math.round(totalWaitSec / countWait) : 180;
+      const tmeSegundos = countWait > 0 ? Math.round(totalWaitSec / countWait) : 0;
 
-      // TMA: Atendimento médio em segundos
+      // TMA: Atendimento médio real em segundos (tempo da chamada até a conclusão)
       let totalAttSec = 0;
       let countAtt = 0;
       finished.forEach(t => {
         if (t.finished_at || t.finishedAt) {
-          const diff = Math.max(0, Math.floor((new Date(t.finished_at || t.finishedAt) - new Date(t.called_at || t.calledAt)) / 1000));
+          const startTime = t.called_at || t.calledAt || t.created_at || t.createdAt;
+          const diff = Math.max(0, Math.floor((new Date(t.finished_at || t.finishedAt) - new Date(startTime)) / 1000));
           totalAttSec += diff;
           countAtt++;
         }
       });
-      const tmaSegundos = countAtt > 0 ? Math.round(totalAttSec / countAtt) : 360;
+      const tmaSegundos = countAtt > 0 ? Math.round(totalAttSec / countAtt) : 0;
 
-      // Resumo por Serviço
+      // Cálculo REAL de SLA Legal (percentual de atendidos com espera <= 15 min / 900s)
+      let dentroDaMetaSLA = 0;
+      finished.forEach(t => {
+        const chamadoEm = t.called_at || t.calledAt || t.finished_at || t.finishedAt;
+        const criadoEm = t.created_at || t.createdAt;
+        if (chamadoEm && criadoEm) {
+          const esperaSeg = Math.max(0, Math.floor((new Date(chamadoEm) - new Date(criadoEm)) / 1000));
+          if (esperaSeg <= 900) {
+            dentroDaMetaSLA++;
+          }
+        } else {
+          dentroDaMetaSLA++;
+        }
+      });
+      const slaComplianceReal = finished.length > 0 
+        ? Math.min(100, Math.round((dentroDaMetaSLA / finished.length) * 100)) 
+        : 100;
+
+      // Resumo por Serviço REAL
       const servicosResumo = (srvs || []).map(s => {
         const srvTickets = todayTickets.filter(t => t.service_id === s.id);
         const srvWait = waiting.filter(t => t.service_id === s.id);
         const srvDone = finished.filter(t => t.service_id === s.id);
+        let srvWaitSec = 0;
+        let srvWaitCount = 0;
+        srvTickets.forEach(t => {
+          if (t.called_at || t.calledAt) {
+            srvWaitSec += Math.max(0, Math.floor((new Date(t.called_at || t.calledAt) - new Date(t.created_at || t.createdAt)) / 1000));
+            srvWaitCount++;
+          }
+        });
+        const srvTme = srvWaitCount > 0 ? Math.round(srvWaitSec / srvWaitCount) : 0;
         return {
           id: s.id,
           nome: s.name || s.nome,
           sigla: s.code || s.sigla,
+          descricao: s.description || s.descricao || '',
+          cor: s.color || '#2E9EFD',
+          is_active: s.is_active !== false,
           emitidas: srvTickets.length,
           atendidas: srvDone.length,
           espera: srvWait.length,
-          tmeSegundos: tmeSegundos,
-          taxaConclusao: srvTickets.length > 0 ? Math.round((srvDone.length / srvTickets.length) * 100) : 100
+          tmeSegundos: srvTme,
+          taxaConclusao: srvTickets.length > 0 ? Math.round((srvDone.length / srvTickets.length) * 100) : 0,
+          raw: s
         };
       });
 
       // Mapeia consultórios/atendentes
       const attendants = (cntrs || []).map(c => ({
+        id: c.id,
         username: c.name.toLowerCase().replace(/\s+/g, '_'),
         nome: c.name,
         guiche: c.name,
         status: c.status || 'LIVRE',
         modoAutomatico: c.auto_mode !== false,
-        atendimentosHoje: finished.filter(t => t.counter_name === c.name).length,
-        ticketAtual: called.find(t => t.counter_name === c.name) || null
+        atendimentosHoje: finished.filter(t => t.counter_name === c.name || t.counter_id === c.id).length,
+        ticketAtual: called.find(t => t.counter_name === c.name || t.counter_id === c.id) || null
       }));
+
+      // Taxa de Ocupação Real dos Consultórios: postos que estão com atendimento em andamento
+      const postosAtendendo = attendants.filter(a => a.status === 'ATENDENDO' || a.ticketAtual).length;
+      const taxaOcupacaoReal = attendants.length > 0 
+        ? Math.min(100, Math.round((postosAtendendo / attendants.length) * 100)) 
+        : 0;
+
+      // Filas com Retenção Crítica Real (algum paciente esperando há mais de 15 minutos / 900s)
+      const now = Date.now();
+      const filasSemVazao = [];
+      (srvs || []).forEach(s => {
+        const srvWait = waiting.filter(t => t.service_id === s.id);
+        if (srvWait.length > 0) {
+          const maisAntigo = srvWait.reduce((oldest, current) => {
+            return new Date(current.created_at || current.createdAt) < new Date(oldest.created_at || oldest.createdAt) ? current : oldest;
+          }, srvWait[0]);
+          const tempoMaxEspera = Math.max(0, Math.floor((now - new Date(maisAntigo.created_at || maisAntigo.createdAt)) / 1000));
+          if (tempoMaxEspera > 900) {
+            filasSemVazao.push({
+              servicoId: s.id,
+              servicoNome: s.name || s.nome,
+              quantidade: srvWait.length,
+              maisAntiga: maisAntigo.codigo || maisAntigo.code,
+              tempoMaxEspera
+            });
+          }
+        }
+      });
 
       return {
         kpis: {
@@ -316,18 +399,19 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
           totalEmitidasHoje: todayTickets.length
         },
         capacidade: {
-          activeAttendants: attendants.filter(a => a.status === 'ATENDENDO' || a.status === 'LIVRE').length,
-          capacidadeHora: 15,
-          demandaHora: waiting.length + 4,
-          taxaOcupacao: Math.min(100, Math.round(((called.length + 1) / Math.max(1, attendants.length)) * 100)),
+          activeAttendants: postosAtendendo,
+          capacidadeHora: tmaSegundos > 0 ? Math.round((Math.max(1, attendants.length) * 3600) / tmaSegundos) : 0,
+          demandaHora: waiting.length,
+          taxaOcupacao: taxaOcupacaoReal,
           status: waiting.length > 10 ? 'ALERTA' : 'ADEQUADA',
-          mensagem: waiting.length > 10 ? 'Demanda elevada. Recomenda-se acionar guichê de apoio.' : 'Fluxo estável. Consultórios operando dentro da margem de conforto.'
+          mensagem: waiting.length > 10 ? 'Demanda elevada na fila de espera.' : 'Fluxo sob controle.'
         },
         servicosResumo,
         waitingQueue: waiting,
         attendants,
-        recentHistory: finished.slice(0, 10),
-        alertInfo: null
+        recentHistory: finished.slice(0, 15),
+        alertInfo: null,
+        slaCompliance: slaComplianceReal
       };
     };
 
@@ -448,7 +532,73 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
       socket.off('tv:call', onTvCall);
       socket.off('ticket:created', onTicketCreated);
     };
-  }, [tenantId, tenantName]);
+  }, [tenantId, tenantName, refreshTrigger]);
+
+  // Gestão de Especialidades Médicas (CRUD dinâmico)
+  const handleOpenCreateService = () => {
+    setEditingService(null);
+    setServiceFormData({
+      nome: '',
+      sigla: '',
+      descricao: '',
+      cor: '#2E9EFD'
+    });
+    setServiceError('');
+    setModalServiceOpen(true);
+  };
+
+  const handleOpenEditService = (srv) => {
+    setEditingService(srv);
+    setServiceFormData({
+      nome: srv.nome || srv.name || '',
+      sigla: srv.sigla || srv.code || '',
+      descricao: srv.descricao || srv.description || '',
+      cor: srv.cor || srv.color || '#2E9EFD'
+    });
+    setServiceError('');
+    setModalServiceOpen(true);
+  };
+
+  const handleSaveService = async (e) => {
+    e.preventDefault();
+    if (!serviceFormData.nome.trim() || !serviceFormData.sigla.trim()) {
+      setServiceError('Nome e Sigla são obrigatórios.');
+      return;
+    }
+    setServiceSaving(true);
+    setServiceError('');
+
+    try {
+      const cleanCode = serviceFormData.sigla.trim().toUpperCase().slice(0, 6);
+      const payload = {
+        ...(editingService?.id ? { id: editingService.id } : {}),
+        name: serviceFormData.nome.trim(),
+        code: cleanCode,
+        description: serviceFormData.descricao.trim(),
+        color: serviceFormData.cor,
+        is_active: true
+      };
+      await saasService.saveService(tenantId, payload);
+      setModalServiceOpen(false);
+      setRefreshTrigger(p => p + 1);
+    } catch (err) {
+      setServiceError(err.message || 'Erro ao salvar especialidade.');
+    } finally {
+      setServiceSaving(false);
+    }
+  };
+
+  const handleDeleteService = async (srv) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a especialidade "${srv.nome}"?`)) {
+      return;
+    }
+    try {
+      await saasService.deleteService(tenantId, srv.id);
+      setRefreshTrigger(p => p + 1);
+    } catch (err) {
+      alert(`Erro ao remover especialidade: ${err.message}`);
+    }
+  };
 
   // Alternador de tema visual
   const handleToggleTheme = () => {
@@ -463,27 +613,36 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
 
 
   // Chamar próxima senha de maior espera (direciona para posto de atendimento real, nunca admin)
-  const handleCallLongestWait = () => {
+  const handleCallLongestWait = async () => {
     if (stats.waitingQueue && stats.waitingQueue.length > 0) {
       const longest = stats.waitingQueue[0];
       const targetAttendant = (attendants || []).find(a => a.status === 'LIVRE') || (attendants || [])[0] || { username: 'laura', guiche: 'Guichê 01' };
-      socket.emit('ticket:callSpecific', {
-        ticketId: longest.id,
-        username: targetAttendant.username || 'laura',
-        guiche: targetAttendant.guiche || 'Guichê 01'
-      });
+      try {
+        await saasService.callSpecificTicket(tenantId, longest.id, {
+          counterName: targetAttendant.guiche || 'Guichê 01',
+          attendantName: targetAttendant.username || 'Diretoria'
+        });
+        loadTenantData();
+      } catch (e) {
+        console.error('[handleCallLongestWait] Erro ao chamar senha:', e);
+      }
     }
   };
 
   // Disparo de Alerta Geral no Painel
   const handleBroadcastAlert = () => {
     setSoundAlertNotice(true);
-    socket.emit('tv:call', {
+    saasService.broadcastTvCall(tenantId, {
       codigo: 'AVISO',
+      code: 'AVISO',
       guiche: 'Triagem Geral',
+      counter_name: 'Triagem Geral',
       prioridadeNome: 'Informação',
+      priority_name: 'Informação',
       prioridadeCor: '#2E9EFD',
-      servicoNome: 'Atenção aos Chamados no Painel'
+      priority_color: '#2E9EFD',
+      servicoNome: 'Atenção aos Chamados no Painel',
+      service_name: 'Atenção aos Chamados no Painel'
     });
     setTimeout(() => setSoundAlertNotice(false), 3500);
   };
@@ -707,20 +866,19 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
     });
   }, [rawAttendants]);
 
-  // Cálculo de SLA Legal
+  // Cálculo de SLA Legal 100% Real (Baseado em senhas concluídas e tempo de espera)
   const slaCompliance = useMemo(() => {
-    const totalConcluidos = kpis?.atendimentosDia || 0;
-    if (totalConcluidos === 0) return 96;
-    const dentroDaMeta = Math.max(0, totalConcluidos - Math.floor(((kpis?.tmeSegundos || 0) > 900 ? 2 : 0)));
-    return Math.min(100, Math.round((dentroDaMeta / totalConcluidos) * 100));
-  }, [kpis?.atendimentosDia, kpis?.tmeSegundos]);
+    if (stats?.slaCompliance !== undefined) return stats.slaCompliance;
+    return 100;
+  }, [stats?.slaCompliance]);
 
-  // Estimativa Preditiva de Conclusão da Fila
+  // Estimativa Preditiva Real de Conclusão da Fila
   const tempoEstimadoRestanteMinutos = useMemo(() => {
     const queue = waitingQueue || [];
     if (queue.length === 0) return 0;
-    const tmaMin = Math.max(3, Math.round((kpis?.tmaSegundos || 300) / 60));
-    const consultoriosAtivos = Math.max(1, (attendants || []).filter(a => a.status === 'ATENDENDO' || a.status === 'LIVRE').length);
+    const tmaMin = kpis?.tmaSegundos > 0 ? Math.round(kpis.tmaSegundos / 60) : 5;
+    const consultoriosAtivos = (attendants || []).filter(a => a.status === 'ATENDENDO' || a.status === 'LIVRE').length;
+    if (consultoriosAtivos === 0) return queue.length * tmaMin;
     return Math.round((queue.length * tmaMin) / consultoriosAtivos);
   }, [waitingQueue, kpis?.tmaSegundos, attendants]);
 
@@ -1116,12 +1274,12 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                  <Building2 size={16} color="#2E9EFD" />
-                  <span style={{ fontSize: '0.82rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                  <Building2 size={16} color="#2E9EFD" style={{ flexShrink: 0 }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }} title={selectedUnidade}>
                     {selectedUnidade}
                   </span>
                 </div>
-                <ChevronDown size={14} color="#B5BCD7" />
+                <ChevronDown size={14} color="#B5BCD7" style={{ flexShrink: 0 }} />
               </button>
 
               {unidadeDropdownOpen && (
@@ -1166,14 +1324,14 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
           {/* Navegação por Rotas Reais */}
           <nav style={{ padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {[
-              { id: 'visao_geral', label: 'Visão Geral & SLA', icon: Activity, badge: `${slaCompliance || 96}%` },
+              { id: 'visao_geral', label: 'Visão Geral', icon: Activity, badge: `${slaCompliance}%` },
               { id: 'usuarios', label: 'Quadro Profissional', icon: UserCheck, badge: `${usersList?.length || 0}` },
               { id: 'unidades', label: 'Unidades', icon: Building2, badge: `${unidadesList?.length || 0}` },
-              { id: 'consultorios', label: 'Estações & Consultórios', icon: Stethoscope, badge: `${attendants?.length || 0}` },
-              { id: 'especialidades', label: 'Especialidades Médicas', icon: Layers, badge: `${servicosResumo?.length || 0}` },
-              { id: 'fila', label: 'Fila de Espera ao Vivo', icon: Users, badge: `${waitingQueue?.length || 0}` },
+              { id: 'consultorios', label: 'Consultórios', icon: Stethoscope, badge: `${attendants?.length || 0}` },
+              { id: 'especialidades', label: 'Especialidades', icon: Layers, badge: `${servicosResumo?.length || 0}` },
+              { id: 'fila', label: 'Fila de Espera', icon: Users, badge: `${waitingQueue?.length || 0}` },
               { id: 'historico', label: 'Histórico do Plantão', icon: History, badge: `${kpis?.atendimentosDia || 0}` },
-              { id: 'impressao', label: 'Impressão Térmica (Totem)', icon: Printer, badge: 'Epson' }
+              { id: 'impressao', label: 'Impressão', icon: Printer, badge: 'Térmica' }
             ].map((item) => {
               const Icon = item.icon;
               const isActive = currentRoute === item.id;
@@ -1193,7 +1351,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                     background: isActive ? 'linear-gradient(135deg, rgba(46, 158, 253, 0.22) 0%, rgba(127, 72, 252, 0.15) 100%)' : 'transparent',
                     border: isActive ? '1px solid rgba(46, 158, 253, 0.5)' : '1px solid transparent',
                     color: isActive ? '#FDFCFD' : '#B5BCD7',
-                    fontWeight: isActive ? 800 : 600,
+                    fontWeight: 600,
                     fontSize: '0.86rem',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
@@ -1206,9 +1364,9 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                     if (!isActive) e.currentTarget.style.background = 'transparent';
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Icon size={19} color={isActive ? '#2E9EFD' : '#5D5EFC'} />
-                    {!sidebarCollapsed && <span>{item.label}</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                    <Icon size={19} color={isActive ? '#2E9EFD' : '#5D5EFC'} style={{ flexShrink: 0 }} />
+                    {!sidebarCollapsed && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>}
                   </div>
                   {!sidebarCollapsed && (
                     <span style={{
@@ -1550,43 +1708,65 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
               <span>Sinal Sonoro (TV)</span>
             </button>
 
-            {onOpenTotem && (
-              <button
-                onClick={onOpenTotem}
-                className="btn-secondary"
-                style={{
-                  padding: '9px 14px',
-                  fontSize: '0.84rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '7px',
-                  border: '1px solid rgba(46, 158, 253, 0.4)'
-                }}
-                title="Abrir terminal de autoatendimento para pacientes"
-              >
-                <Ticket size={16} color="#2E9EFD" />
-                <span>Abrir Totem</span>
-              </button>
-            )}
+            <a
+              href="#totem"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                const totemUrl = `${window.location.origin}/?tenant=${tenantId}#totem`;
+                const win = window.open(totemUrl, '_blank');
+                if (win) {
+                  e.preventDefault();
+                  win.focus();
+                }
+              }}
+              className="btn-secondary"
+              style={{
+                padding: '9px 14px',
+                fontSize: '0.84rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                border: '1px solid rgba(46, 158, 253, 0.4)',
+                cursor: 'pointer',
+                textDecoration: 'none',
+                color: '#FDFCFD'
+              }}
+              title="Abrir terminal de autoatendimento para pacientes em nova aba"
+            >
+              <Ticket size={16} color="#2E9EFD" />
+              <span>Abrir Totem</span>
+            </a>
 
-            {onOpenPainel && (
-              <button
-                onClick={onOpenPainel}
-                className="btn-secondary"
-                style={{
-                  padding: '9px 14px',
-                  fontSize: '0.84rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '7px',
-                  border: '1px solid rgba(127, 72, 252, 0.4)'
-                }}
-                title="Abrir monitor de chamada da sala de espera"
-              >
-                <Tv size={16} color="#7F48FC" />
-                <span>Abrir TV</span>
-              </button>
-            )}
+            <a
+              href={`/?tenant=${tenantId}#painel`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                const painelUrl = `${window.location.origin}/?tenant=${tenantId}#painel`;
+                const win = window.open(painelUrl, '_blank');
+                if (win) {
+                  e.preventDefault();
+                  win.focus();
+                }
+              }}
+              className="btn-secondary"
+              style={{
+                padding: '9px 14px',
+                fontSize: '0.84rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                border: '1px solid rgba(127, 72, 252, 0.4)',
+                cursor: 'pointer',
+                textDecoration: 'none',
+                color: '#FDFCFD'
+              }}
+              title="Abrir monitor de chamada da sala de espera em nova aba"
+            >
+              <Tv size={16} color="#7F48FC" />
+              <span>Abrir TV</span>
+            </a>
 
             <button
               onClick={handleExportCSV}
@@ -1701,7 +1881,9 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', fontSize: '0.78rem', color: '#B5BCD7' }}>
                   <span>Meta Legal (&lt;15m):</span>
-                  <strong style={{ color: '#34d399' }}>Conforme</strong>
+                  <strong style={{ color: slaCompliance >= 90 ? '#34d399' : '#f59e0b' }}>
+                    {kpis.atendimentosDia > 0 ? (slaCompliance >= 90 ? 'Conforme' : 'Abaixo da Meta') : 'Sem violações'}
+                  </strong>
                 </div>
               </div>
 
@@ -1728,7 +1910,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                   </div>
                 </div>
                 <div style={{ fontSize: '2.3rem', fontWeight: 900, color: '#FDFCFD', lineHeight: 1.1 }}>
-                  {capacidade?.taxaOcupacao || 65}%
+                  {capacidade?.taxaOcupacao || 0}%
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', fontSize: '0.78rem', color: '#B5BCD7' }}>
                   <span>Postos em Atendimento:</span>
@@ -4051,15 +4233,33 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
               borderRadius: '20px',
               padding: '24px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <div>
                   <h2 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#FDFCFD' }}>
                     Jornada por Especialidade Clínica
                   </h2>
                   <p style={{ fontSize: '0.84rem', color: '#B5BCD7', marginTop: '3px' }}>
-                    Volume de senhas, fila em espera e taxa de conclusão
+                    Volume de senhas, fila em espera, taxa de conclusão e gestão de filas
                   </p>
                 </div>
+
+                <button
+                  onClick={handleOpenCreateService}
+                  className="btn-primary"
+                  style={{
+                    padding: '9px 18px',
+                    borderRadius: '12px',
+                    fontSize: '0.84rem',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={16} />
+                  <span>Nova Especialidade</span>
+                </button>
               </div>
 
               <div style={{ overflowX: 'auto' }}>
@@ -4073,12 +4273,18 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                       <th style={{ padding: '12px 10px' }}>Em Espera</th>
                       <th style={{ padding: '12px 10px' }}>TME</th>
                       <th style={{ padding: '12px 10px', textAlign: 'right' }}>Aproveitamento</th>
+                      <th style={{ padding: '12px 10px', textAlign: 'center' }}>Ações</th>
                     </tr>
                   </thead>
                   <tbody>
                     {servicosResumo && servicosResumo.map((srv) => (
                       <tr key={srv.id} style={{ borderBottom: '1px solid rgba(93, 94, 252, 0.08)' }}>
-                        <td style={{ padding: '12px 10px', fontWeight: 700, color: '#FDFCFD' }}>{srv.nome}</td>
+                        <td style={{ padding: '12px 10px', fontWeight: 700, color: '#FDFCFD' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: srv.cor || '#2E9EFD', flexShrink: 0 }} />
+                            <span>{srv.nome}</span>
+                          </div>
+                        </td>
                         <td style={{ padding: '12px 10px', fontFamily: 'monospace', color: '#5D5EFC', fontWeight: 800 }}>{srv.sigla}</td>
                         <td style={{ padding: '12px 10px', color: '#2E9EFD', fontWeight: 700 }}>{srv.emitidas}</td>
                         <td style={{ padding: '12px 10px', color: '#34d399', fontWeight: 700 }}>{srv.atendidas}</td>
@@ -4100,12 +4306,231 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                             {srv.taxaConclusao}%
                           </span>
                         </td>
+                        <td style={{ padding: '12px 10px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                            <button
+                              onClick={() => handleOpenEditService(srv)}
+                              title="Editar Especialidade"
+                              style={{
+                                background: 'rgba(46, 158, 253, 0.15)',
+                                border: '1px solid rgba(46, 158, 253, 0.3)',
+                                borderRadius: '8px',
+                                padding: '6px',
+                                color: '#2E9EFD',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <Edit3 size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteService(srv)}
+                              title="Remover Especialidade"
+                              style={{
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                border: '1px solid rgba(239, 68, 68, 0.3)',
+                                borderRadius: '8px',
+                                padding: '6px',
+                                color: '#f87171',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </section>
+
+            {/* MODAL DE CADASTRO / EDIÇÃO DE ESPECIALIDADE */}
+            {modalServiceOpen && (
+              <div style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(2, 8, 23, 0.85)',
+                backdropFilter: 'blur(12px)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                padding: '20px'
+              }}>
+                <div style={{
+                  width: '100%',
+                  maxWidth: '520px',
+                  background: 'linear-gradient(135deg, #07133F 0%, #020817 100%)',
+                  border: '1px solid rgba(46, 158, 253, 0.4)',
+                  borderRadius: '24px',
+                  padding: '28px',
+                  boxShadow: '0 24px 70px rgba(0, 0, 0, 0.7)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 900, color: '#FDFCFD' }}>
+                      {editingService ? 'Editar Especialidade Médica' : 'Nova Especialidade Médica'}
+                    </h3>
+                    <button
+                      onClick={() => setModalServiceOpen(false)}
+                      style={{ background: 'transparent', border: 'none', color: '#B5BCD7', cursor: 'pointer' }}
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {serviceError && (
+                    <div style={{
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      color: '#f87171',
+                      fontSize: '0.84rem',
+                      marginBottom: '14px'
+                    }}>
+                      {serviceError}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSaveService} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#B5BCD7', marginBottom: '5px' }}>
+                        Nome da Especialidade *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Cardiologia & Check-up"
+                        value={serviceFormData.nome}
+                        onChange={(e) => setServiceFormData(prev => ({ ...prev, nome: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          background: 'rgba(2, 8, 23, 0.8)',
+                          border: '1px solid rgba(93, 94, 252, 0.3)',
+                          color: '#FDFCFD',
+                          fontSize: '0.88rem'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#B5BCD7', marginBottom: '5px' }}>
+                          Sigla / Prefixo da Senha *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          maxLength={5}
+                          placeholder="CARD"
+                          value={serviceFormData.sigla}
+                          onChange={(e) => setServiceFormData(prev => ({ ...prev, sigla: e.target.value.toUpperCase() }))}
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            borderRadius: '10px',
+                            background: 'rgba(2, 8, 23, 0.8)',
+                            border: '1px solid rgba(93, 94, 252, 0.3)',
+                            color: '#5D5EFC',
+                            fontFamily: 'monospace',
+                            fontWeight: 800,
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                        <small style={{ fontSize: '0.72rem', color: '#B5BCD7' }}>Ex: CARD-001</small>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#B5BCD7', marginBottom: '5px' }}>
+                          Cor de Destaque
+                        </label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '6px' }}>
+                          {['#2E9EFD', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#ef4444'].map(color => (
+                            <div
+                              key={color}
+                              onClick={() => setServiceFormData(prev => ({ ...prev, cor: color }))}
+                              style={{
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '50%',
+                                background: color,
+                                cursor: 'pointer',
+                                border: serviceFormData.cor === color ? '2px solid #ffffff' : '2px solid transparent',
+                                transform: serviceFormData.cor === color ? 'scale(1.2)' : 'scale(1)',
+                                transition: 'all 0.15s'
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#B5BCD7', marginBottom: '5px' }}>
+                        Descrição Curta (opcional)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Consultas e laudos cardiológicos"
+                        value={serviceFormData.descricao}
+                        onChange={(e) => setServiceFormData(prev => ({ ...prev, descricao: e.target.value }))}
+                        style={{
+                          width: '100%',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          background: 'rgba(2, 8, 23, 0.8)',
+                          border: '1px solid rgba(93, 94, 252, 0.3)',
+                          color: '#FDFCFD',
+                          fontSize: '0.88rem'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '14px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setModalServiceOpen(false)}
+                        style={{
+                          padding: '10px 18px',
+                          borderRadius: '10px',
+                          background: 'rgba(255, 255, 255, 0.08)',
+                          border: 'none',
+                          color: '#FDFCFD',
+                          fontSize: '0.86rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Cancelar
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={serviceSaving}
+                        className="btn-primary"
+                        style={{
+                          padding: '10px 22px',
+                          borderRadius: '10px',
+                          fontSize: '0.86rem',
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {serviceSaving ? 'Gravando...' : 'Salvar Especialidade'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -4208,13 +4633,17 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                             </td>
                             <td style={{ padding: '14px 10px', textAlign: 'right' }}>
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   const targetAttendant = (attendants || []).find(a => a.status === 'LIVRE') || (attendants || [])[0] || { username: 'laura', guiche: 'Guichê 01' };
-                                  socket.emit('ticket:callSpecific', {
-                                    ticketId: t.id,
-                                    username: targetAttendant.username || 'laura',
-                                    guiche: targetAttendant.guiche || 'Guichê 01'
-                                  });
+                                  try {
+                                    await saasService.callSpecificTicket(tenantId, t.id, {
+                                      counterName: targetAttendant.guiche || 'Guichê 01',
+                                      attendantName: targetAttendant.username || 'Diretoria'
+                                    });
+                                    loadTenantData();
+                                  } catch (e) {
+                                    console.error('[Chamar Agora] Erro:', e);
+                                  }
                                 }}
                                 style={{
                                   padding: '7px 16px',
@@ -4329,7 +4758,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
             ROTA 7: IMPRESSÃO TÉRMICA & GESTÃO DA BOBINA EPSON M352A
             ======================================================================= */}
         {currentRoute === 'impressao' && (
-          <ThermalPrinterConfig />
+          <ThermalPrinterConfig tenantId={tenantId} tenantName={tenantName} />
         )}
 
       </main>
@@ -4808,7 +5237,7 @@ export default function AdminDash({ tenant, onSwitchUser, onOpenTotem, onOpenPai
                     required
                     value={unidadeFormData.nome}
                     onChange={(e) => setUnidadeFormData({ ...unidadeFormData, nome: e.target.value })}
-                    placeholder="Ex: Complexo Hospitalar Central, Ambulatório Integrado..."
+                    placeholder="Ex: Hospital Odete Valadares - Unidade Sul, Ambulatório Integrado..."
                     style={{
                       width: '100%',
                       background: '#1e293b',

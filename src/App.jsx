@@ -38,7 +38,26 @@ function AppContent() {
     return () => window.removeEventListener('hashchange', handleHash);
   }, []);
 
-  const tenantId = currentTenant?.id || 'tenant-demo-01';
+  const isUuid = (id) => typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  // Extrai tenant da URL (?tenant=... ou ?tenantId=...)
+  const getUrlTenantId = () => {
+    try {
+      const fullUrl = window.location.href;
+      const match = fullUrl.match(/[?&]tenant(?:Id)?=([^&#]+)/i);
+      if (match && match[1]) {
+        return decodeURIComponent(match[1]);
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const urlTenant = getUrlTenantId();
+  const tenantId = (urlTenant && isUuid(urlTenant))
+    ? urlTenant
+    : (currentTenant?.id && isUuid(currentTenant.id)) 
+      ? currentTenant.id 
+      : 'f65ac0ed-e001-4da3-87de-8359cdc38762';
 
   // 1. Terminal Kiosk de Autoatendimento (Totem)
   if (stationOverride === 'totem') {
@@ -52,8 +71,12 @@ function AppContent() {
         <div style={{ position: 'fixed', top: '16px', right: '16px', zIndex: 9999 }}>
           <button
             onClick={() => {
-              window.location.hash = '';
-              setStationOverride(null);
+              if (window.opener) {
+                window.close();
+              } else {
+                window.location.hash = '';
+                setStationOverride(null);
+              }
             }}
             className="btn-secondary"
             style={{
@@ -64,7 +87,7 @@ function AppContent() {
               backdropFilter: 'blur(8px)',
               cursor: 'pointer'
             }}
-            title="Sair do modo Totem"
+            title="Sair ou fechar tela do Totem"
           >
             <RotateCw size={13} />
             <span>Sair do Totem</span>
@@ -84,8 +107,12 @@ function AppContent() {
         <div style={{ position: 'fixed', top: '16px', left: '16px', zIndex: 9999 }}>
           <button
             onClick={() => {
-              window.location.hash = '';
-              setStationOverride(null);
+              if (window.opener) {
+                window.close();
+              } else {
+                window.location.hash = '';
+                setStationOverride(null);
+              }
             }}
             className="btn-secondary"
             style={{
@@ -96,7 +123,7 @@ function AppContent() {
               backdropFilter: 'blur(8px)',
               cursor: 'pointer'
             }}
-            title="Sair do Painel TV"
+            title="Sair ou fechar Painel TV"
           >
             <RotateCw size={13} />
             <span>Sair do Painel</span>
@@ -174,8 +201,26 @@ function AppContent() {
         <AdminDash 
           tenant={currentTenant}
           onSwitchUser={signOut}
-          onOpenTotem={() => setStationOverride('totem')}
-          onOpenPainel={() => setStationOverride('painel')}
+          onOpenTotem={() => {
+            const totemUrl = `${window.location.origin}/#totem`;
+            const win = window.open(totemUrl, '_blank');
+            if (win) {
+              win.focus();
+            } else {
+              window.location.hash = '#totem';
+              setStationOverride('totem');
+            }
+          }}
+          onOpenPainel={() => {
+            const painelUrl = `${window.location.origin}/#painel`;
+            const win = window.open(painelUrl, '_blank');
+            if (win) {
+              win.focus();
+            } else {
+              window.location.hash = '#painel';
+              setStationOverride('painel');
+            }
+          }}
         />
       </div>
     );
