@@ -60,27 +60,30 @@ export default function PainelTV({ tenantId: propTenantId }) {
   useEffect(() => {
     let isMounted = true;
     let lastHandledKey = null;
+    let isInitialLoad = true;
 
-    const handleNewCall = (ticket) => {
-      if (!ticket) return;
-      const key = `${ticket.id}_${ticket.calledAt || ticket.called_at || ticket._broadcast_ts || Date.now()}`;
+    const handleNewCall = (ticket, playAudio = true) => {
+      if (!ticket || !ticket.codigo) return;
+      const key = `${ticket.id || ticket.codigo}_${ticket.calledAt || ticket.called_at || ticket._broadcast_ts || ''}`;
       if (lastHandledKey === key) return;
       lastHandledKey = key;
 
       setCurrentCall(ticket);
-      setCallHistory(prev => [ticket, ...prev.filter(t => t.id !== ticket.id)].slice(0, 6));
+      setCallHistory(prev => [ticket, ...prev.filter(t => (t.id && ticket.id) ? t.id !== ticket.id : t.codigo !== ticket.codigo)].slice(0, 6));
 
-      // Animação de flash pulsante
-      setIsFlashing(true);
-      setTimeout(() => {
-        if (isMounted) setIsFlashing(false);
-      }, 2800);
+      if (playAudio) {
+        // Animação de flash pulsante
+        setIsFlashing(true);
+        setTimeout(() => {
+          if (isMounted) setIsFlashing(false);
+        }, 2800);
 
-      // Toca chime sonoro e fala no alto-falante
-      playChimeSound();
-      setTimeout(() => {
-        speakTicket(ticket);
-      }, 700);
+        // Toca chime sonoro e fala no alto-falante
+        playChimeSound();
+        setTimeout(() => {
+          speakTicket(ticket);
+        }, 700);
+      }
     };
 
     // 1. Carrega dados do Supabase
@@ -91,10 +94,18 @@ export default function PainelTV({ tenantId: propTenantId }) {
           const calledList = tkts.filter(t => t.status === 'CALLED' || t.status === 'FINISHED');
           if (calledList.length > 0) {
             const latest = calledList[0];
-            if (!currentCall || currentCall.id !== latest.id || (latest.called_at && latest.called_at !== currentCall.called_at)) {
-              handleNewCall(latest);
+            const key = `${latest.id || latest.codigo}_${latest.called_at || latest.calledAt || ''}`;
+            
+            if (isInitialLoad) {
+              isInitialLoad = false;
+              lastHandledKey = key;
+              setCurrentCall(latest);
+              setCallHistory(calledList.slice(1, 7));
+            } else if (lastHandledKey !== key) {
+              // Nova chamada legítima detectada pelo banco
+              handleNewCall(latest, true);
+              setCallHistory(calledList.slice(1, 7));
             }
-            setCallHistory(calledList.slice(1, 7));
           }
         }
       } catch (err) {
@@ -104,14 +115,19 @@ export default function PainelTV({ tenantId: propTenantId }) {
 
     loadSaaSData();
 
-    // 2. BroadcastChannel nativo (sincronização instantânea entre abas sem atraso)
+    // 2. BroadcastChannel nativo (apenas chamadas de TV dedicadas)
     let bc = null;
     if (typeof BroadcastChannel !== 'undefined') {
       try {
         bc = new BroadcastChannel('scaflow_tv_channel');
         bc.onmessage = (event) => {
-          if (event.data && isMounted) {
-            handleNewCall(event.data);
+          const data = event.data;
+          if (!data || !isMounted) return;
+          // Ignora mensagens que não sejam de chamada de TV
+          if (data.type && data.type !== 'TV_CALL') return;
+          const ticket = data.ticket || data;
+          if (ticket && ticket.codigo) {
+            handleNewCall(ticket, true);
           }
         };
       } catch (e) {}
@@ -122,8 +138,8 @@ export default function PainelTV({ tenantId: propTenantId }) {
       if (e.key === 'scaflow_last_called_ticket' && e.newValue) {
         try {
           const t = JSON.parse(e.newValue);
-          if (t && isMounted) {
-            handleNewCall(t);
+          if (t && isMounted && t.codigo) {
+            handleNewCall(t, true);
           }
         } catch (err) {}
       }
@@ -132,8 +148,8 @@ export default function PainelTV({ tenantId: propTenantId }) {
 
     // 4. Escuta evento na própria janela
     const handleCustomCall = (e) => {
-      if (e.detail && isMounted) {
-        handleNewCall(e.detail);
+      if (e.detail && isMounted && e.detail.codigo) {
+        handleNewCall(e.detail, true);
       }
     };
     window.addEventListener('scaflow_tv_call', handleCustomCall);
@@ -154,7 +170,9 @@ export default function PainelTV({ tenantId: propTenantId }) {
 
     // 7. Fallback Socket Node.js
     const onTvCall = (ticket) => {
-      handleNewCall(ticket);
+      if (ticket && ticket.codigo) {
+        handleNewCall(ticket, true);
+      }
     };
     socket.on('tv:call', onTvCall);
 

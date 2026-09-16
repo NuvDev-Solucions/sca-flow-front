@@ -63,15 +63,27 @@ export async function resolveEffectiveTenantId(tenantId) {
   return 'f65ac0ed-e001-4da3-87de-8359cdc38762';
 }
 
-let appBroadcastChannel = null;
+let appTvBroadcastChannel = null;
+let appDataBroadcastChannel = null;
+
 function getTvBroadcastChannel() {
   if (typeof BroadcastChannel === 'undefined') return null;
-  if (!appBroadcastChannel) {
+  if (!appTvBroadcastChannel) {
     try {
-      appBroadcastChannel = new BroadcastChannel('scaflow_tv_channel');
+      appTvBroadcastChannel = new BroadcastChannel('scaflow_tv_channel');
     } catch (e) {}
   }
-  return appBroadcastChannel;
+  return appTvBroadcastChannel;
+}
+
+function getDataBroadcastChannel() {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  if (!appDataBroadcastChannel) {
+    try {
+      appDataBroadcastChannel = new BroadcastChannel('scaflow_data_channel');
+    } catch (e) {}
+  }
+  return appDataBroadcastChannel;
 }
 
 // ==============================================================================
@@ -648,16 +660,33 @@ export const saasService = {
         try {
           const { data: prio } = await supabase.from('priorities').select('code, name, color').eq('id', effPriorityId).single();
           const { data: srv } = await supabase.from('services').select('name').eq('id', effServiceId).single();
-          const today = new Date().toISOString().split('T')[0];
+          const prefix = prio?.code || 'N';
+          const { data: latestTicket } = await supabase
+            .from('tickets')
+            .select('code')
+            .eq('tenant_id', effectiveTenantId)
+            .ilike('code', `${prefix}%`)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          let nextNum = 1;
+          if (latestTicket?.code) {
+            const match = latestTicket.code.match(/\d+$/);
+            if (match) {
+              nextNum = parseInt(match[0], 10) + 1;
+            }
+          }
+
           const { count } = await supabase
             .from('tickets')
             .select('*', { count: 'exact', head: true })
             .eq('tenant_id', effectiveTenantId)
-            .eq('priority_id', effPriorityId)
-            .gte('created_at', `${today}T00:00:00`);
+            .eq('priority_id', effPriorityId);
 
-          const num = String((count || 0) + 1).padStart(3, '0');
-          const code = `${prio?.code || 'N'}${num}`;
+          const finalNum = Math.max((count || 0) + 1, nextNum);
+          const num = String(finalNum).padStart(3, '0');
+          const code = `${prefix}${num}`;
 
           const { data: inserted, error: insertErr } = await supabase
             .from('tickets')
@@ -729,9 +758,9 @@ export const saasService = {
       localStorage.setItem('scaflow_last_ticket_event', JSON.stringify(payload));
     } catch (e) {}
 
-    // 2. BroadcastChannel nativo do navegador
+    // 2. BroadcastChannel nativo de dados (não interfere com o canal exclusivo de TV)
     try {
-      const bc = getTvBroadcastChannel();
+      const bc = getDataBroadcastChannel();
       if (bc) {
         bc.postMessage(payload);
       }
@@ -1128,7 +1157,7 @@ export const saasService = {
     window.addEventListener('storage', handleStorage);
 
     // 3. BroadcastChannel nativo (latência zero entre abas e janelas)
-    const bc = getTvBroadcastChannel();
+    const bc = getDataBroadcastChannel();
     const handleBcMessage = (e) => {
       if (!e?.data) return;
       if (!e.data.tenantId || e.data.tenantId === effectiveTenantId) {
